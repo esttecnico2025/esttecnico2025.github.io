@@ -1,0 +1,2455 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>OMR Vision Suite — Generador Carta PDF Nativo y Escáner Óptico</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: #090d16;
+      color: #f1f5f9;
+      margin: 0;
+      padding: 0;
+    }
+    .font-mono-code { font-family: 'JetBrains Mono', monospace; }
+
+    /* Hoja Física Tamaño Carta en Vista Previa: 8.5in x 11in (215.9mm x 279.4mm) */
+    .omr-letter-sheet {
+      width: 215.9mm;
+      height: 279.4mm;
+      background: #ffffff;
+      color: #000000;
+      position: relative;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+      user-select: none;
+      overflow: hidden;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- BARRA SUPERIOR -->
+  <header class="bg-slate-900/95 backdrop-blur border-b border-slate-800 sticky top-0 z-40 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
+          <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+          <circle cx="15" cy="10" r="1.5" />
+          <circle cx="9" cy="15" r="1.5" />
+          <circle cx="15" cy="15" r="1.5" fill="currentColor" />
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-sm sm:text-base font-extrabold tracking-tight text-white">OMR Vision Suite</h1>
+          <span id="global-hash-badge" class="font-mono-code text-[11px] px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">OMR-180G-4C</span>
+        </div>
+        <p class="text-[11px] text-slate-400 hidden sm:block">Motor Vectorial Carta PDF Nativo (QR + Fiduciales) + Escáner Móvil (1/0)</p>
+      </div>
+    </div>
+
+    <nav class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+      <button id="tab-btn-generator" type="button" class="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-indigo-600 text-white shadow transition cursor-pointer">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <span>1. Generador Carta & PDF</span>
+      </button>
+      <button id="tab-btn-scanner" type="button" class="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white transition cursor-pointer">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+        <span>2. Escáner Móvil (1/0)</span>
+      </button>
+    </nav>
+    <div class="flex items-center gap-2">
+      <span id="auth-user-label" class="hidden sm:inline text-[11px] text-slate-400">Sin sesión</span>
+      <button id="btn-auth-open" type="button" class="px-3 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white">Conectar cuenta</button>
+      <button id="btn-auth-signout" type="button" class="hidden px-3 py-2 rounded-lg text-xs font-bold bg-slate-700 hover:bg-slate-600 text-white">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <!-- AUTENTICACIÓN SUPABASE -->
+  <div id="auth-modal" class="hidden fixed inset-0 z-[80] bg-slate-950/80 backdrop-blur-sm p-4 flex items-center justify-center">
+    <section class="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <div><h2 class="text-lg font-extrabold text-white">Cuenta OMR Vision Suite</h2><p class="text-xs text-slate-400 mt-1">Accede para preparar la sincronización de tus datos con Supabase.</p></div>
+        <button id="btn-auth-close" type="button" class="text-slate-400 hover:text-white text-xl" aria-label="Cerrar">×</button>
+      </div>
+      <div class="space-y-1.5">
+        <label for="auth-email" class="block text-xs text-slate-300">Correo electrónico</label>
+        <input id="auth-email" type="email" autocomplete="email" required placeholder="correo@ejemplo.com" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+      </div>
+      <div class="space-y-1.5">
+        <label for="auth-password" class="block text-xs text-slate-300">Contraseña (mínimo 8 caracteres)</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required minlength="8" placeholder="Tu contraseña" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500">
+      </div>
+      <div id="auth-message" class="hidden rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300" role="status"></div>
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btn-auth-login" type="button" class="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-2.5 text-sm font-bold text-white">Iniciar sesión</button>
+        <button id="btn-auth-register" type="button" class="rounded-lg bg-slate-700 hover:bg-slate-600 px-3 py-2.5 text-sm font-bold text-white">Crear cuenta</button>
+      </div>
+      <p class="text-[10px] leading-relaxed text-slate-500">La autenticación utiliza Supabase Auth. No introduzcas aquí la contraseña de la base de datos ni claves secretas.</p>
+    </section>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MÓDULO 1: GENERADOR DE HOJAS OMR Y MOTOR PDF VECTORIAL NATIVO         -->
+  <!-- ===================================================================== -->
+  <div id="module-generator" class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+    
+    <!-- Panel Lateral -->
+    <aside class="w-full lg:w-[420px] bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-800 p-4 space-y-4 overflow-y-auto shrink-0">
+      
+      <!-- 1. Geometría y Hash -->
+      <section class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">Geometría y Hash de Plantilla</h2>
+          <span id="hash-display" class="font-mono-code text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-700/50 px-2 py-0.5 rounded">OMR-180G-4C</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="text-[11px] text-slate-400 block mb-1">Preguntas (1–180)</label>
+            <input id="cfg-questions" type="number" min="1" max="180" value="180" class="w-full px-2.5 py-1.5 text-xs font-mono-code bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="text-[11px] text-slate-400 block mb-1">Opciones por pregunta</label>
+            <select id="cfg-options" class="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none">
+              <option value="4">4 opciones (A–D)</option>
+              <option value="5">5 opciones (A–E)</option>
+              <option value="6">6 opciones (A–F)</option>
+              <option value="7" selected>7 opciones (A–G)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="text-[11px] text-slate-400 block mb-1">Columnas en Carta</label>
+            <select id="cfg-columns" class="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none">
+              <option value="3">3 Columnas</option>
+              <option value="4" selected>4 Columnas (45×4 = 180)</option>
+              <option value="5">5 Columnas (36×5 = 180)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[11px] text-slate-400 block mb-1">Institución</label>
+            <input id="cfg-institution" type="text" value="INSTITUCIÓN EDUCATIVA NACIONAL" class="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+          </div>
+        </div>
+
+        <div>
+          <label class="text-[11px] text-slate-400 block mb-1">Título de la Prueba</label>
+          <input id="cfg-title" type="text" value="EVALUACIÓN ACADÉMICA INTEGRAL — HOJA OMR" class="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none" />
+        </div>
+      </section>
+
+      <!-- 2. Base de Estudiantes (Opción A) -->
+      <section class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-cyan-400">Base de Estudiantes (Opción A)</h2>
+          <span id="student-counter-badge" class="font-mono-code text-xs px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">4 est.</span>
+        </div>
+
+        <form id="form-add-student" class="grid grid-cols-12 gap-1.5">
+          <input id="stu-code" type="text" maxlength="10" pattern="\d{10}" placeholder="Cód. 10 cifras" required class="col-span-4 px-2 py-1.5 text-xs font-mono-code bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-cyan-500 focus:outline-none" />
+          <input id="stu-name" type="text" placeholder="Nombre completo" required class="col-span-5 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-cyan-500 focus:outline-none" />
+          <input id="stu-grade" type="text" placeholder="Grado" required class="col-span-2 px-2 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:border-cyan-500 focus:outline-none" />
+          <button type="submit" class="col-span-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-bold text-sm flex items-center justify-center cursor-pointer" title="Agregar">+</button>
+        </form>
+
+        <div class="flex items-center gap-2">
+          <label class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer text-center">
+            Importar CSV (3 campos)
+            <input id="input-csv-students" type="file" accept=".csv,.txt" class="hidden" />
+          </label>
+          <button id="btn-toggle-paste" type="button" class="flex-1 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer">
+            Pegar Lista
+          </button>
+        </div>
+
+        <div class="grid grid-cols-[1fr_auto] gap-2 items-end">
+          <div>
+            <label for="student-group-select" class="block text-[10px] text-slate-400 mb-1">Carpeta de importación</label>
+            <select id="student-group-select" class="w-full px-2.5 py-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white">
+              <option value="">Selecciona o crea una carpeta…</option>
+            </select>
+          </div>
+          <button id="btn-create-student-group" type="button" class="px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold">+ Carpeta</button>
+        </div>
+        <p class="text-[10px] text-slate-500">Cada importación CSV se asociará a la carpeta seleccionada. Un estudiante puede pertenecer a varias carpetas sin duplicar su ficha.</p>
+
+        <div id="paste-area-box" class="hidden space-y-2">
+          <textarea id="textarea-bulk-students" rows="3" placeholder="codigo,nombre,grado&#10;1066286803,"ESTEBAN ANDRÉS ROJAS GARCÍA",11°&#10;1066286814,"VALENTINA SOFÍA MENDOZA DÍAZ",11°" class="w-full p-2 text-xs font-mono-code bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500"></textarea>
+          <button id="btn-process-paste" type="button" class="w-full py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold cursor-pointer">Importar Lista</button>
+        </div>
+
+        <input id="search-student" type="text" placeholder="Buscar estudiante..." class="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-cyan-500" />
+
+        <div class="max-h-44 overflow-y-auto border border-slate-800 rounded-xl">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead class="bg-slate-900 text-slate-400 sticky top-0">
+              <tr>
+                <th class="py-1.5 px-2 font-semibold">Código</th>
+                <th class="py-1.5 px-2 font-semibold">Estudiante</th>
+                <th class="py-1.5 px-2 font-semibold">Grado</th>
+                <th class="py-1.5 px-2 text-right">×</th>
+              </tr>
+            </thead>
+            <tbody id="students-table-body" class="divide-y divide-slate-800/80"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 3. Acciones de Generación PDF Directa (100% Nativa Sin CDNs) -->
+      <section class="bg-slate-950/90 border border-indigo-500/30 rounded-2xl p-3.5 space-y-2.5">
+        <button id="btn-generate-pdf-batch" type="button" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold text-sm shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-2 transition cursor-pointer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span>Generar y Ver PDF Lote Completo</span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btn-generate-pdf-single" type="button" class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold border border-slate-700 transition cursor-pointer">
+            PDF Solo Estudiante Actual
+          </button>
+          <button id="btn-open-gallery-modal" type="button" class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-semibold border border-slate-700 transition cursor-pointer">
+            Vista Cuadrícula Lote
+          </button>
+        </div>
+
+        <div id="pdf-engine-log" class="text-[11px] font-mono-code text-slate-400 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5">
+          Estado: Motor PDF 1.4 Vectorial listo (215.9 × 279.4 mm).
+        </div>
+      </section>
+    </aside>
+
+    <!-- Visor Interactivo de Hoja Carta -->
+    <main class="flex-1 bg-slate-950 p-4 sm:p-6 overflow-auto flex flex-col items-center">
+      <div class="w-full max-w-[215.9mm] flex flex-wrap items-center justify-between gap-2 mb-3 bg-slate-900/90 border border-slate-800 px-3 py-2 rounded-xl">
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-slate-400">Estudiante en vista previa:</span>
+          <select id="preview-student-select" class="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-white font-medium focus:outline-none"></select>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="preview-metrics-label" class="text-[11px] font-mono-code text-slate-400">4 Cols × 45 Filas</span>
+          <button id="btn-toggle-scale" type="button" class="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer">Escala: Auto</button>
+        </div>
+      </div>
+
+      <div id="preview-scale-wrapper" class="origin-top transition-transform duration-200">
+        <div id="svg-sheet-preview" class="omr-letter-sheet"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MÓDULO 2: ESCÁNER MÓVIL OMR Y CALIFICADOR BINARIO (1 / 0)             -->
+  <!-- ===================================================================== -->
+  <div id="module-scanner" class="hidden flex-1 flex flex-col lg:flex-row overflow-hidden">
+    
+    <aside class="w-full lg:w-[420px] bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-800 p-4 space-y-4 overflow-y-auto shrink-0">
+      
+      <!-- 1. Clave de Respuestas -->
+      <section class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-400">1. Clave de Respuestas</h2>
+          <span id="key-status-badge" class="font-mono-code text-[11px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/60">180 / 180 válidas</span>
+        </div>
+
+        <p class="text-[11px] text-slate-400">
+          Pega la secuencia de letras (<span id="allowed-letters-hint" class="font-mono-code text-slate-200">A–G</span>), carga un `.TXT`/`.CSV` o edita por pregunta.
+        </p>
+
+        <textarea id="answer-key-input" rows="3" placeholder="Ej: ABCDGEF..." class="w-full p-2 text-xs font-mono-code uppercase tracking-wider bg-slate-900 border border-slate-700 rounded-xl text-emerald-300 focus:outline-none focus:border-emerald-500"></textarea>
+
+        <div class="grid grid-cols-3 gap-1.5">
+          <label class="py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer text-center">
+            Subir TXT/CSV
+            <input id="input-key-file" type="file" accept=".txt,.csv" class="hidden" />
+          </label>
+          <button id="btn-random-key" type="button" class="py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer">
+            Clave Aleatoria
+          </button>
+          <button id="btn-toggle-key-editor" type="button" class="py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer">
+            Editor Visual
+          </button>
+        </div>
+
+        <div id="visual-key-editor" class="hidden max-h-44 overflow-y-auto p-2 bg-slate-900 rounded-xl border border-slate-800 grid grid-cols-2 sm:grid-cols-3 gap-1.5"></div>
+      </section>
+
+      <!-- 2. Captura Óptica -->
+      <section class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-indigo-400">2. Escáner Óptico Móvil</h2>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btn-start-camera" type="button" class="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 transition cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+            <span>Abrir Cámara</span>
+          </button>
+
+          <label class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold border border-slate-700 flex items-center justify-center gap-1.5 transition cursor-pointer">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span>Subir Foto</span>
+            <input id="input-scan-photo" type="file" accept="image/*" capture="environment" class="hidden" />
+          </label>
+        </div>
+
+        <button id="btn-simulate-scan" type="button" class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition cursor-pointer">
+          <span>Simular Escaneo de Prueba</span>
+        </button>
+
+        <div class="pt-1">
+          <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+            <span>Sensibilidad de marca</span>
+            <span id="threshold-label" class="font-mono-code text-slate-200">24% contraste</span>
+          </div>
+          <input id="input-threshold" type="range" min="12" max="45" value="24" class="w-full accent-indigo-500 cursor-pointer" />
+        </div>
+      </section>
+
+      <!-- 3. Registros Binarios (1 / 0) -->
+      <section class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-amber-400">3. Resultados Binarios (1 / 0)</h2>
+          <span id="scanned-count-badge" class="font-mono-code text-xs px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">0 hojas</span>
+        </div>
+
+        <div class="max-h-48 overflow-y-auto border border-slate-800 rounded-xl">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead class="bg-slate-900 text-slate-400 sticky top-0">
+              <tr>
+                <th class="py-1.5 px-2 font-semibold">Código</th>
+                <th class="py-1.5 px-2 font-semibold">Aciertos/Desaciertos (1/0)</th>
+                <th class="py-1.5 px-2 text-right">×</th>
+              </tr>
+            </thead>
+            <tbody id="scanned-results-tbody" class="divide-y divide-slate-800/80">
+              <tr><td colspan="3" class="py-4 text-center text-slate-500 text-xs">Sin hojas escaneadas.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btn-export-csv" type="button" class="flex-1 py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5 transition cursor-pointer">
+            <span>Descargar CSV (codigo,P1..Pn)</span>
+          </button>
+          <button id="btn-clear-scans" type="button" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 text-xs font-semibold transition cursor-pointer">
+            Limpiar
+          </button>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Visor de Diagnóstico del Escáner -->
+    <main class="flex-1 bg-slate-950 p-3 sm:p-5 flex flex-col items-center justify-start overflow-y-auto gap-3">
+      <div class="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+          <span id="scanner-status-text" class="text-xs sm:text-sm font-medium text-slate-200">Listo para escanear.</span>
+        </div>
+        <div id="detected-student-pill" class="hidden font-mono-code text-xs px-2.5 py-1 rounded-lg bg-emerald-950/80 text-emerald-300 border border-emerald-700/60">
+          ID: ----------
+        </div>
+      </div>
+
+      <div id="camera-viewport" class="hidden relative w-full max-w-2xl bg-black rounded-2xl overflow-hidden border-2 border-indigo-500/60 shadow-2xl">
+        <video id="camera-video" playsinline autoplay muted class="w-full h-auto block"></video>
+        <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-5">
+          <div class="flex justify-between">
+            <div class="w-10 h-10 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg"></div>
+            <div class="bg-black/70 text-emerald-300 text-[11px] font-semibold px-3 py-1 rounded-full self-start">Alinea los 4 marcadores negros</div>
+            <div class="w-10 h-10 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg"></div>
+          </div>
+          <div class="flex justify-between">
+            <div class="w-10 h-10 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg"></div>
+            <div class="w-10 h-10 border-b-4 border-r-4 border-emerald-400 rounded-br-lg"></div>
+          </div>
+        </div>
+        <div class="absolute bottom-4 inset-x-0 flex items-center justify-center gap-4 z-10">
+          <button id="btn-capture-frame" type="button" class="px-6 py-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-sm shadow-xl cursor-pointer">Capturar y Procesar</button>
+          <button id="btn-stop-camera" type="button" class="px-4 py-3 rounded-full bg-slate-900/90 hover:bg-slate-800 text-white text-xs font-semibold border border-slate-700 cursor-pointer">Cerrar</button>
+        </div>
+      </div>
+
+      <div class="w-full max-w-4xl bg-slate-900/80 border border-slate-800 rounded-2xl p-3 flex flex-col items-center gap-3">
+        <div class="w-full flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="font-bold text-slate-200">Diagnóstico Óptico:</span>
+            <span class="flex items-center gap-1 text-emerald-400"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Acierto (1)</span>
+            <span class="flex items-center gap-1 text-rose-400"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Desacierto (0)</span>
+            <span class="flex items-center gap-1 text-amber-300"><span class="w-2.5 h-2.5 rounded-full border border-amber-300 inline-block"></span> Clave esperada</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-reprocess-corners" type="button" class="hidden px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs cursor-pointer">Recalcular</button>
+            <button id="btn-save-current-scan" type="button" class="hidden px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow cursor-pointer">Guardar Registro (1/0)</button>
+          </div>
+        </div>
+
+        <div class="relative w-full flex justify-center overflow-hidden rounded-xl bg-slate-950 border border-slate-800 min-h-[340px] items-center">
+          <canvas id="diagnostic-canvas" class="max-w-full h-auto touch-none cursor-crosshair"></canvas>
+          <div id="canvas-empty-placeholder" class="text-center p-6 space-y-2">
+            <p class="text-xs text-slate-400 max-w-sm">
+              Pulsa <strong class="text-emerald-400">"Simular Escaneo de Prueba"</strong> para probar la lectura QR, homografía y calificación binaria 1/0.
+            </p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL VISOR INTEGRADO DE PDF NATIVO (FUNCIONA EN CUALQUIER SANDBOX)   -->
+  <!-- ===================================================================== -->
+  <div id="pdf-viewer-modal" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex flex-col">
+    <div class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+        <h3 id="pdf-modal-title" class="text-sm font-bold text-white">Documento PDF Generado (Tamaño Carta 8.5×11")</h3>
+      </div>
+      <div class="flex items-center gap-2">
+        <a id="pdf-direct-download-link" href="#" download="Lote_OMR_Carta.pdf" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <span>Guardar Archivo .PDF</span>
+        </a>
+        <button id="btn-close-pdf-modal" type="button" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 cursor-pointer">
+          Cerrar Visor
+        </button>
+      </div>
+    </div>
+    <div class="flex-1 w-full bg-slate-950 p-2 sm:p-4 flex items-center justify-center">
+      <iframe id="pdf-preview-iframe" class="w-full h-full max-w-5xl rounded-xl border border-slate-700 bg-white"></iframe>
+    </div>
+  </div>
+
+  <!-- MODAL CUADRÍCULA DE LOTE COMPLETO EN PANTALLA -->
+  <div id="gallery-modal" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col">
+    <div class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+      <h3 id="gallery-modal-title" class="text-sm font-bold text-white">Vista Previa del Lote Completo</h3>
+      <div class="flex items-center gap-2">
+        <button id="btn-gallery-to-pdf" type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold cursor-pointer">Exportar a PDF</button>
+        <button id="btn-close-gallery-modal" type="button" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 cursor-pointer">Cerrar</button>
+      </div>
+    </div>
+    <div id="gallery-grid-container" class="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center"></div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast-banner" class="fixed bottom-4 right-4 bg-slate-800 text-white border border-slate-700 px-4 py-2.5 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2 translate-y-24 opacity-0 transition-all duration-300 z-50">
+    <span id="toast-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+    <span id="toast-text">Listo</span>
+  </div>
+
+  <script>
+    /**
+     * =========================================================================
+     * 1. GENERADOR QR PURO EN JAVASCRIPT (ISO/IEC 18004 - SIN DEPENDENCIAS CDN)
+     *    Genera matrices booleanas n×n auténticas y escaneables por jsQR y
+     *    cualquier cámara móvil en modo Byte.
+     * =========================================================================
+     */
+    const PureQR = (function() {
+      const EXP_TABLE = new Array(256);
+      const LOG_TABLE = new Array(256);
+      for (let i = 0; i < 8; i++) EXP_TABLE[i] = 1 << i;
+      for (let i = 8; i < 256; i++) {
+        EXP_TABLE[i] = EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^ EXP_TABLE[i - 8];
+      }
+      for (let i = 0; i < 255; i++) LOG_TABLE[EXP_TABLE[i]] = i;
+
+      function glog(n) { return LOG_TABLE[n]; }
+      function gexp(n) {
+        while (n < 0) n += 255;
+        while (n >= 256) n -= 255;
+        return EXP_TABLE[n];
+      }
+
+      function polyMultiply(p1, p2) {
+        const res = new Array(p1.length + p2.length - 1).fill(0);
+        for (let i = 0; i < p1.length; i++) {
+          for (let j = 0; j < p2.length; j++) {
+            res[i + j] ^= gexp(glog(p1[i]) + glog(p2[j]));
+          }
+        }
+        return res;
+      }
+
+      function polyMod(dividend, divisor) {
+        if (dividend.length - divisor.length < 0) return dividend;
+        const ratio = glog(dividend[0]) - glog(divisor[0]);
+        const res = dividend.slice();
+        for (let i = 0; i < divisor.length; i++) {
+          res[i] ^= gexp(glog(divisor[i]) + ratio);
+        }
+        return polyMod(res.slice(1), divisor);
+      }
+
+      function getRSGenerator(ecCount) {
+        let poly = [1];
+        for (let i = 0; i < ecCount; i++) {
+          poly = polyMultiply(poly, [1, gexp(i)]);
+        }
+        return poly;
+      }
+
+      // Capacidades Nivel L (Byte Mode): Versiones 1 a 6
+      const VERSIONS = [
+        null,
+        { ver: 1, size: 21, totalCodewords: 26, ecCodewords: 7, dataCodewords: 19, align: [] },
+        { ver: 2, size: 25, totalCodewords: 44, ecCodewords: 10, dataCodewords: 34, align: [6, 18] },
+        { ver: 3, size: 29, totalCodewords: 70, ecCodewords: 15, dataCodewords: 55, align: [6, 22] },
+        { ver: 4, size: 33, totalCodewords: 100, ecCodewords: 20, dataCodewords: 80, align: [6, 26] },
+        { ver: 5, size: 37, totalCodewords: 134, ecCodewords: 26, dataCodewords: 108, align: [6, 30] },
+        { ver: 6, size: 41, totalCodewords: 172, ecCodewords: 36, dataCodewords: 136, align: [6, 34] }
+      ];
+
+      function encode(text) {
+        const bytes = [];
+        for (let i = 0; i < text.length; i++) {
+          const code = text.charCodeAt(i);
+          bytes.push(code & 0xff);
+        }
+
+        let spec = VERSIONS[4];
+        for (let v = 1; v <= 6; v++) {
+          if (bytes.length + 2 <= VERSIONS[v].dataCodewords) {
+            spec = VERSIONS[v];
+            break;
+          }
+        }
+
+        // Construir flujo de bits (Modo Byte = 0100)
+        const bits = [];
+        const pushBits = (val, len) => {
+          for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1);
+        };
+
+        pushBits(4, 4); // Byte mode
+        pushBits(bytes.length, 8);
+        bytes.forEach(b => pushBits(b, 8));
+
+        const maxDataBits = spec.dataCodewords * 8;
+        const termLen = Math.min(4, maxDataBits - bits.length);
+        pushBits(0, termLen);
+        while (bits.length % 8 !== 0) bits.push(0);
+
+        const dataWords = [];
+        for (let i = 0; i < bits.length; i += 8) {
+          let w = 0;
+          for (let j = 0; j < 8; j++) w = (w << 1) | bits[i + j];
+          dataWords.push(w);
+        }
+
+        const padBytes = [0xec, 0x11];
+        let padIdx = 0;
+        while (dataWords.length < spec.dataCodewords) {
+          dataWords.push(padBytes[padIdx % 2]);
+          padIdx++;
+        }
+
+        // Reed-Solomon Error Correction (bloque único para V1-V5, 2 bloques en V6)
+        let finalCodewords = [];
+        if (spec.ver <= 5) {
+          const rsGen = getRSGenerator(spec.ecCodewords);
+          const padded = dataWords.concat(new Array(spec.ecCodewords).fill(0));
+          const ec = polyMod(padded, rsGen);
+          finalCodewords = dataWords.concat(ec);
+        } else {
+          // V6: 2 bloques de 68 datos + 18 EC cada uno
+          const rsGen = getRSGenerator(18);
+          const b1 = dataWords.slice(0, 68);
+          const b2 = dataWords.slice(68, 136);
+          const ec1 = polyMod(b1.concat(new Array(18).fill(0)), rsGen);
+          const ec2 = polyMod(b2.concat(new Array(18).fill(0)), rsGen);
+          for (let i = 0; i < 68; i++) { finalCodewords.push(b1[i], b2[i]); }
+          for (let i = 0; i < 18; i++) { finalCodewords.push(ec1[i], ec2[i]); }
+        }
+
+        const n = spec.size;
+        const modules = Array.from({ length: n }, () => new Array(n).fill(null));
+        const isFunction = Array.from({ length: n }, () => new Array(n).fill(false));
+
+        const setFunc = (r, c, dark) => {
+          if (r >= 0 && r < n && c >= 0 && c < n) {
+            modules[r][c] = dark;
+            isFunction[r][c] = true;
+          }
+        };
+
+        // Finder patterns + separadores
+        const placeFinder = (row, col) => {
+          for (let r = -1; r <= 7; r++) {
+            for (let c = -1; c <= 7; c++) {
+              const inOuter = r >= 0 && r <= 6 && c >= 0 && c <= 6;
+              const inBorder = r === 0 || r === 6 || c === 0 || c === 6;
+              const inCore = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+              setFunc(row + r, col + c, inOuter && (inBorder || inCore));
+            }
+          }
+        };
+
+        placeFinder(0, 0);
+        placeFinder(0, n - 7);
+        placeFinder(n - 7, 0);
+
+        // Alignment pattern
+        if (spec.align.length > 0) {
+          const pos = spec.align[1];
+          for (let r = -2; r <= 2; r++) {
+            for (let c = -2; c <= 2; c++) {
+              const dark = Math.abs(r) === 2 || Math.abs(c) === 2 || (r === 0 && c === 0);
+              setFunc(pos + r, pos + c, dark);
+            }
+          }
+        }
+
+        // Timing patterns
+        for (let i = 8; i < n - 8; i++) {
+          setFunc(6, i, i % 2 === 0);
+          setFunc(i, 6, i % 2 === 0);
+        }
+
+        // Dark module & reservar formato
+        setFunc(n - 8, 8, true);
+        for (let i = 0; i < 9; i++) {
+          if (!isFunction[8][i]) setFunc(8, i, false);
+          if (!isFunction[i][8]) setFunc(i, 8, false);
+        }
+        for (let i = 0; i < 8; i++) {
+          if (!isFunction[8][n - 1 - i]) setFunc(8, n - 1 - i, false);
+          if (!isFunction[n - 1 - i][8]) setFunc(n - 1 - i, 8, false);
+        }
+
+        // Colocar bits en zigzag con máscara 0 ((row + col) % 2 === 0)
+        const allBits = [];
+        finalCodewords.forEach(cw => {
+          for (let b = 7; b >= 0; b--) allBits.push((cw >>> b) & 1);
+        });
+
+        let bitIdx = 0;
+        let up = true;
+        for (let right = n - 1; right >= 1; right -= 2) {
+          if (right === 6) right = 5;
+          for (let vert = 0; vert < n; vert++) {
+            const r = up ? n - 1 - vert : vert;
+            for (let lr = 0; lr < 2; lr++) {
+              const c = right - lr;
+              if (!isFunction[r][c]) {
+                const rawBit = bitIdx < allBits.length ? allBits[bitIdx++] : 0;
+                const masked = rawBit ^ ((r + c) % 2 === 0 ? 1 : 0);
+                modules[r][c] = masked === 1;
+              }
+            }
+          }
+          up = !up;
+        }
+
+        // Escribir información de formato para Nivel L (01) + Máscara 0 (000) -> 0x77c4
+        const formatBits = 0x77c4;
+        for (let i = 0; i < 15; i++) {
+          const bit = ((formatBits >>> i) & 1) === 1;
+          if (i < 6) modules[i][8] = bit;
+          else if (i < 8) modules[i + 1][8] = bit;
+          else modules[n - 15 + i][8] = bit;
+
+          if (i < 8) modules[8][n - 1 - i] = bit;
+          else if (i < 9) modules[8][15 - i] = bit;
+          else modules[8][14 - i] = bit;
+        }
+
+        return { size: n, modules };
+      }
+
+      return { encode };
+    })();
+
+    /**
+     * =========================================================================
+     * 2. CONSTRUCTOR BINARIO PDF 1.4 NATIVO EN JAVASCRIPT PURO (TAMAÑO CARTA)
+     *    Genera archivos PDF vectoriales multipágina (612 × 792 pt = 8.5 × 11")
+     *    directamente en memoria sin depender de librerías externas.
+     * =========================================================================
+     */
+    class PurePDFBuilder {
+      constructor() {
+        this.pageWidthPt = 612;  // 8.5 in * 72 pt/in
+        this.pageHeightPt = 792; // 11.0 in * 72 pt/in
+        this.mmToPt = 72 / 25.4;
+        this.pages = [];
+        this.currentOps = [];
+      }
+
+      addPage() {
+        if (this.currentOps.length > 0) {
+          this.pages.push(this.currentOps.join('\n'));
+        }
+        this.currentOps = [];
+      }
+
+      // Convierte coordenadas (xMm, yMm) desde esquina superior izquierda a PDF bottom-left
+      tx(xMm) { return (xMm * this.mmToPt).toFixed(2); }
+      ty(yMm) { return (this.pageHeightPt - yMm * this.mmToPt).toFixed(2); }
+      ts(sizeMm) { return (sizeMm * this.mmToPt).toFixed(2); }
+
+      setFillGray(gray) {
+        this.currentOps.push(`${gray.toFixed(3)} g`);
+      }
+
+      setStrokeGray(gray) {
+        this.currentOps.push(`${gray.toFixed(3)} G`);
+      }
+
+      setLineWidth(widthMm) {
+        this.currentOps.push(`${this.ts(widthMm)} w`);
+      }
+
+      rect(xMm, yMm, wMm, hMm, mode = 'S') {
+        const x = this.tx(xMm);
+        const y = this.ty(yMm + hMm);
+        const w = this.ts(wMm);
+        const h = this.ts(hMm);
+        this.currentOps.push(`${x} ${y} ${w} ${h} re ${mode}`);
+      }
+
+      line(x1Mm, y1Mm, x2Mm, y2Mm) {
+        this.currentOps.push(`${this.tx(x1Mm)} ${this.ty(y1Mm)} m ${this.tx(x2Mm)} ${this.ty(y2Mm)} l S`);
+      }
+
+      circle(cxMm, cyMm, rMm, mode = 'S') {
+        const cx = cxMm * this.mmToPt;
+        const cy = this.pageHeightPt - cyMm * this.mmToPt;
+        const r = rMm * this.mmToPt;
+        const k = 0.5522847498 * r;
+        this.currentOps.push(
+          `${(cx + r).toFixed(2)} ${cy.toFixed(2)} m ` +
+          `${(cx + r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx + k).toFixed(2)} ${(cy + r).toFixed(2)} ${cx.toFixed(2)} ${(cy + r).toFixed(2)} c ` +
+          `${(cx - k).toFixed(2)} ${(cy + r).toFixed(2)} ${(cx - r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx - r).toFixed(2)} ${cy.toFixed(2)} c ` +
+          `${(cx - r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx - k).toFixed(2)} ${(cy - r).toFixed(2)} ${cx.toFixed(2)} ${(cy - r).toFixed(2)} c ` +
+          `${(cx + k).toFixed(2)} ${(cy - r).toFixed(2)} ${(cx + r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx + r).toFixed(2)} ${cy.toFixed(2)} c ${mode}`
+        );
+      }
+
+      // Escapa texto WinAnsi (tildes y Ñ incluidas) para fuentes Type1 Helvetica
+      encodeWinAnsiHex(str) {
+        const map = {
+          'Á': 0xC1, 'É': 0xC9, 'Í': 0xCD, 'Ó': 0xD3, 'Ú': 0xDA, 'Ü': 0xDC, 'Ñ': 0xD1,
+          'á': 0xE1, 'é': 0xE9, 'í': 0xED, 'ó': 0xF3, 'ú': 0xFA, 'ü': 0xFC, 'ñ': 0xF1,
+          '°': 0xB0, '—': 0x97, '–': 0x96, '•': 0x95
+        };
+        let hex = '';
+        for (let i = 0; i < str.length; i++) {
+          const ch = str[i];
+          const code = map[ch] !== undefined ? map[ch] : (ch.charCodeAt(0) < 256 ? ch.charCodeAt(0) : 0x3F);
+          hex += code.toString(16).padStart(2, '0');
+        }
+        return `<${hex}>`;
+      }
+
+      text(str, xMm, yMm, fontSizePt, bold = false, align = 'left') {
+        const fontTag = bold ? '/F2' : '/F1';
+        const clean = String(str);
+        // Estimación precisa de ancho de glifo Helvetica para centrado y alineación derecha
+        const approxWidthPt = clean.length * fontSizePt * (bold ? 0.56 : 0.52);
+        let xPt = xMm * this.mmToPt;
+        if (align === 'center') xPt -= approxWidthPt / 2;
+        else if (align === 'right') xPt -= approxWidthPt;
+        const yPt = this.pageHeightPt - yMm * this.mmToPt;
+
+        this.currentOps.push(
+          `BT ${fontTag} ${fontSizePt.toFixed(1)} Tf ${xPt.toFixed(2)} ${yPt.toFixed(2)} Td ${this.encodeWinAnsiHex(clean)} Tj ET`
+        );
+      }
+
+      drawQRCode(qrMatrix, xMm, yMm, sizeMm) {
+        const n = qrMatrix.size;
+        const cell = sizeMm / n;
+        this.setFillGray(0);
+        for (let r = 0; r < n; r++) {
+          for (let c = 0; c < n; c++) {
+            if (qrMatrix.modules[r][c]) {
+              this.rect(xMm + c * cell, yMm + r * cell, cell + 0.02, cell + 0.02, 'f');
+            }
+          }
+        }
+      }
+
+      buildBlob() {
+        if (this.currentOps.length > 0) {
+          this.pages.push(this.currentOps.join('\n'));
+          this.currentOps = [];
+        }
+
+        const objects = [];
+        const addObj = (content) => {
+          objects.push(content);
+          return objects.length;
+        };
+
+        // 1: Catalog, 2: Pages, 3: Helvetica, 4: Helvetica-Bold
+        addObj('<< /Type /Catalog /Pages 2 0 R >>');
+        addObj(''); // Placeholder para Pages
+        addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+        addObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+
+        const pageRefs = [];
+        this.pages.forEach(streamContent => {
+          const contentId = addObj(`<< /Length ${streamContent.length} >>\nstream\n${streamContent}\nendstream`);
+          const pageId = addObj(
+            `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.pageWidthPt} ${this.pageHeightPt}] ` +
+            `/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`
+          );
+          pageRefs.push(`${pageId} 0 R`);
+        });
+
+        objects[1] = `<< /Type /Pages /Kids [${pageRefs.join(' ')}] /Count ${pageRefs.length} >>`;
+
+        let pdf = '%PDF-1.4\n';
+        const offsets = [0];
+        objects.forEach((obj, idx) => {
+          offsets.push(pdf.length);
+          pdf += `${idx + 1} 0 obj\n${obj}\nendobj\n`;
+        });
+
+        const xrefStart = pdf.length;
+        pdf += `xref\n0 ${objects.length + 1}\n`;
+        pdf += '0000000000 65535 f \n';
+        for (let i = 1; i <= objects.length; i++) {
+          pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+        }
+        pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+
+        // Convertir cadena binaria a Uint8Array exacto
+        const bytes = new Uint8Array(pdf.length);
+        for (let i = 0; i < pdf.length; i++) {
+          bytes[i] = pdf.charCodeAt(i) & 0xff;
+        }
+        return new Blob([bytes], { type: 'application/pdf' });
+      }
+    }
+
+    /**
+     * =========================================================================
+     * 3. ESTADO GLOBAL Y GEOMETRÍA UNIFICADA EN MILÍMETROS (CARTA 215.9 × 279.4)
+     * =========================================================================
+     */
+    const ALL_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+    const STORAGE_KEY_SCANS = 'omr_suite_binary_scans_v2';
+    const STORAGE_KEY_STUDENTS = 'omr_suite_students_v2';
+
+    // No se cargan estudiantes de demostración: la base comienza vacía.
+
+    const appState = {
+      questions: 180,
+      optionsCount: 7,
+      columns: 4,
+      institution: 'INSTITUCIÓN EDUCATIVA NACIONAL',
+      title: 'EVALUACIÓN ACADÉMICA INTEGRAL — HOJA OMR',
+      students: [],
+      selectedStudentIndex: 0,
+      answerKey: [],
+      thresholdRatio: 0.24,
+      scannedRecords: [],
+      currentImage: null,
+      fiducialCorners: null,
+      draggingCornerIdx: -1,
+      lastEvaluation: null,
+      cameraStream: null,
+      lastPdfBlobUrl: null
+    };
+
+    function initState() {
+      // La lista local anterior contenía registros de demostración; se inicia vacía.
+      appState.students = [];
+      try {
+        const sc = localStorage.getItem(STORAGE_KEY_SCANS);
+        appState.scannedRecords = sc ? JSON.parse(sc) : [];
+      } catch (e) {
+        appState.scannedRecords = [];
+      }
+      generateRandomAnswerKey(false);
+    }
+
+    function saveStudentsToStorage() {
+      try { localStorage.setItem(STORAGE_KEY_STUDENTS, JSON.stringify(appState.students)); } catch (e) {}
+    }
+
+    function saveScansToStorage() {
+      try { localStorage.setItem(STORAGE_KEY_SCANS, JSON.stringify(appState.scannedRecords)); } catch (e) {}
+    }
+
+    function computeTemplateHash() {
+      const q = appState.questions;
+      const o = appState.optionsCount;
+      const c = appState.columns;
+      const maxLetter = ALL_LETTERS[o - 1];
+      const raw = `Q=${q}|O=${o}|C=${c}|CARTA_MM`;
+      let h = 2166136261;
+      for (let i = 0; i < raw.length; i++) {
+        h ^= raw.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      const hex = (h >>> 0).toString(16).toUpperCase().padStart(8, '0').slice(0, 4);
+      return `OMR-${q}${maxLetter}-${c}C-${hex}`;
+    }
+
+    /**
+     * Calcula todas las coordenadas en milímetros sobre hoja Carta (215.9 × 279.4 mm)
+     * y sus equivalentes normalizados (u, v) in [0, 1]^2 respecto a los 4 fiduciales.
+     */
+    function computeSheetGeometry() {
+      const pageW = 215.9;
+      const pageH = 279.4;
+      const qCount = appState.questions;
+      const optCount = appState.optionsCount;
+      const cols = Math.min(appState.columns, Math.max(1, qCount));
+      const rowsPerCol = Math.ceil(qCount / cols);
+      const letters = ALL_LETTERS.slice(0, optCount);
+
+      // Marco Fiducial (4 esquinas alrededor de la zona de preguntas)
+      const markerSize = 5.2; // mm
+      const frameLeft = 7.5;
+      const frameTop = 38.0;
+      const frameW = pageW - frameLeft * 2; // 200.9 mm
+      const frameH = 232.0; // Hasta y = 270.0 mm
+
+      // Centros de los 4 marcadores fiduciales (TL, TR, BR, BL)
+      const fiducialsMm = [
+        { x: frameLeft + markerSize / 2, y: frameTop + markerSize / 2 },
+        { x: frameLeft + frameW - markerSize / 2, y: frameTop + markerSize / 2 },
+        { x: frameLeft + frameW - markerSize / 2, y: frameTop + frameH - markerSize / 2 },
+        { x: frameLeft + markerSize / 2, y: frameTop + frameH - markerSize / 2 }
+      ];
+
+      const spanU = fiducialsMm[1].x - fiducialsMm[0].x;
+      const spanV = fiducialsMm[3].y - fiducialsMm[0].y;
+
+      // Área interna de columnas dentro del marco fiducial
+      const gridLeft = frameLeft + 6.2;
+      const gridTop = frameTop + 6.2;
+      const gridW = frameW - 12.4;
+      const gridH = frameH - 12.4;
+      const colGap = 2.4;
+      const colW = (gridW - colGap * (cols - 1)) / cols;
+
+      const colHeaderH = 5.2;
+      const bodyH = gridH - colHeaderH;
+      const rowH = bodyH / rowsPerCol;
+
+      // Diámetro de burbuja entre 2.95 mm y 4.10 mm
+      const numColW = 5.8;
+      const timingColW = 1.8;
+      const optsRegionW = colW - numColW - timingColW - 1.5;
+      const maxBubbleW = (optsRegionW / optCount) * 0.78;
+      const maxBubbleH = rowH * 0.78;
+      const bubbleDiamMm = Math.max(2.90, Math.min(4.10, Math.min(maxBubbleW, maxBubbleH)));
+      const bubbleR = bubbleDiamMm / 2;
+
+      const columnBoxes = [];
+      const bubbles = [];
+
+      for (let c = 0; c < cols; c++) {
+        const startQ = c * rowsPerCol + 1;
+        if (startQ > qCount) break;
+        const cx = gridLeft + c * (colW + colGap);
+        columnBoxes.push({
+          colIdx: c,
+          x: cx,
+          y: gridTop,
+          w: colW,
+          h: gridH,
+          headerH: colHeaderH,
+          numColW,
+          optsStartX: cx + numColW + 0.8,
+          stepX: optsRegionW / optCount
+        });
+      }
+
+      for (let q = 1; q <= qCount; q++) {
+        const cIdx = Math.floor((q - 1) / rowsPerCol);
+        const rIdx = (q - 1) % rowsPerCol;
+        const box = columnBoxes[cIdx];
+        const cy = gridTop + colHeaderH + (rIdx + 0.5) * rowH;
+
+        for (let o = 0; o < optCount; o++) {
+          const cx = box.optsStartX + (o + 0.5) * box.stepX;
+          const u = (cx - fiducialsMm[0].x) / spanU;
+          const v = (cy - fiducialsMm[0].y) / spanV;
+          bubbles.push({
+            q,
+            optIndex: o,
+            optLetter: letters[o],
+            xMm: cx,
+            yMm: cy,
+            rMm: bubbleR,
+            u: Number(u.toFixed(6)),
+            v: Number(v.toFixed(6)),
+            rU: Number((bubbleR / spanU).toFixed(6)),
+            rV: Number((bubbleR / spanV).toFixed(6))
+          });
+        }
+      }
+
+      return {
+        pageW,
+        pageH,
+        hash: computeTemplateHash(),
+        questions: qCount,
+        optionsCount: optCount,
+        letters,
+        cols,
+        rowsPerCol,
+        markerSize,
+        fiducialsMm,
+        gridTop,
+        colHeaderH,
+        rowH,
+        bubbleDiamMm,
+        columnBoxes,
+        bubbles
+      };
+    }
+
+    /**
+     * =========================================================================
+     * 4. RENDERIZADO VECTORIAL EN PDF Y EN SVG (100% IDÉNTICOS)
+     * =========================================================================
+     */
+    function renderStudentPageToPDF(pdf, student, geom) {
+      pdf.addPage();
+      const qrPayload = JSON.stringify({
+        id: student.codigo,
+        h: geom.hash,
+        n: geom.questions,
+        o: geom.optionsCount
+      });
+      const qrMatrix = PureQR.encode(qrPayload);
+
+      // Borde encabezado
+      pdf.setStrokeGray(0);
+      pdf.setLineWidth(0.45);
+      pdf.line(7.5, 35.5, 208.4, 35.5);
+
+      // Textos institucionales
+      pdf.setFillGray(0);
+      pdf.text(appState.institution.toUpperCase(), 7.5, 10.5, 10, true, 'left');
+      pdf.text(appState.title.toUpperCase(), 7.5, 14.8, 8.2, true, 'left');
+
+      // Caja de datos del estudiante (Opción A)
+      pdf.setFillGray(0.96);
+      pdf.setLineWidth(0.3);
+      pdf.rect(7.5, 17.0, 172.0, 12.0, 'B');
+
+      pdf.setFillGray(0.35);
+      pdf.text('ESTUDIANTE:', 9.5, 20.5, 6.0, true, 'left');
+      pdf.text('CÓDIGO ID:', 126.0, 20.5, 6.0, true, 'left');
+      pdf.text('GRADO:', 161.0, 20.5, 6.0, true, 'left');
+
+      pdf.setFillGray(0);
+      pdf.text(student.nombre.toUpperCase().slice(0, 44), 9.5, 25.8, 8.5, true, 'left');
+      pdf.text(student.codigo, 126.0, 25.8, 8.8, true, 'left');
+      pdf.text(student.grado, 161.0, 25.8, 8.8, true, 'left');
+
+      // Instrucciones y Hash
+      pdf.text('Rellene completamente el círculo con lápiz N° 2 o bolígrafo negro. No marque dos opciones.', 7.5, 33.2, 6.5, false, 'left');
+      pdf.text(`HASH: ${geom.hash}`, 179.5, 33.2, 6.8, true, 'right');
+
+      // Recuadro QR (Esquina superior derecha)
+      pdf.setFillGray(1);
+      pdf.setLineWidth(0.35);
+      pdf.rect(182.0, 6.5, 26.4, 27.5, 'B');
+      pdf.drawQRCode(qrMatrix, 184.2, 7.8, 22.0);
+      pdf.setFillGray(0);
+      pdf.text(student.codigo, 195.2, 32.8, 6.2, true, 'center');
+
+      // 4 Marcadores Fiduciales de Esquina (Finder Patterns)
+      const ms = geom.markerSize;
+      geom.fiducialsMm.forEach(c => {
+        const mx = c.x - ms / 2;
+        const my = c.y - ms / 2;
+        pdf.setFillGray(0);
+        pdf.rect(mx, my, ms, ms, 'f');
+        pdf.setFillGray(1);
+        pdf.rect(mx + 1.1, my + 1.1, ms - 2.2, ms - 2.2, 'f');
+        pdf.setFillGray(0);
+        pdf.rect(mx + 1.8, my + 1.8, ms - 3.6, ms - 3.6, 'f');
+      });
+
+      // Columnas de preguntas
+      const fontPt = Math.max(5.5, Math.min(7.5, geom.bubbleDiamMm * 1.95));
+
+      geom.columnBoxes.forEach(box => {
+        // Sombreado encabezado columna
+        pdf.setFillGray(0.92);
+        pdf.rect(box.x, box.y, box.w, box.headerH, 'f');
+
+        // Borde exterior columna y línea encabezado
+        pdf.setStrokeGray(0);
+        pdf.setLineWidth(0.32);
+        pdf.rect(box.x, box.y, box.w, box.h, 'S');
+        pdf.line(box.x, box.y + box.headerH, box.x + box.w, box.y + box.headerH);
+
+        pdf.setFillGray(0);
+        pdf.text('#', box.x + box.numColW / 2, box.y + 3.8, fontPt, true, 'center');
+        geom.letters.forEach((letter, oIdx) => {
+          const lx = box.optsStartX + (oIdx + 0.5) * box.stepX;
+          pdf.text(letter, lx, box.y + 3.8, fontPt, true, 'center');
+        });
+      });
+
+      // Filas (franjas cebra + número + timing mark)
+      for (let q = 1; q <= geom.questions; q++) {
+        const cIdx = Math.floor((q - 1) / geom.rowsPerCol);
+        const rIdx = (q - 1) % geom.rowsPerCol;
+        const box = geom.columnBoxes[cIdx];
+        const rowTop = geom.gridTop + geom.colHeaderH + rIdx * geom.rowH;
+        const cy = rowTop + geom.rowH / 2;
+
+        if (rIdx % 2 === 1) {
+          pdf.setFillGray(0.955);
+          pdf.rect(box.x + 0.15, rowTop, box.w - 0.3, geom.rowH, 'f');
+        }
+
+        pdf.setFillGray(0);
+        pdf.text(String(q), box.x + box.numColW - 0.6, cy + fontPt * 0.12, fontPt, true, 'right');
+        // Marca de sincronización (Timing track)
+        pdf.rect(box.x + box.w - 1.8, cy - 0.35, 1.2, 0.7, 'f');
+      }
+
+      // Burbujas circulares con letra centrada
+      pdf.setStrokeGray(0);
+      pdf.setLineWidth(0.28);
+      pdf.setFillGray(1);
+      geom.bubbles.forEach(b => {
+        pdf.circle(b.xMm, b.yMm, b.rMm, 'B');
+      });
+
+      pdf.setFillGray(0);
+      geom.bubbles.forEach(b => {
+        pdf.text(b.optLetter, b.xMm, b.yMm + fontPt * 0.11, fontPt * 0.88, true, 'center');
+      });
+
+      // Pie de página
+      pdf.setFillGray(0.25);
+      pdf.text(`PLANTILLA: ${geom.hash} | ${geom.questions} PREGUNTAS × ${geom.optionsCount} OPCIONES (A-${geom.letters[geom.letters.length - 1]})`, 7.5, 274.5, 6.2, false, 'left');
+      pdf.text('CARTA 215.9 × 279.4 MM — CONSERVE LIMPIOS LOS 4 MARCADORES', 208.4, 274.5, 6.2, false, 'right');
+    }
+
+    /**
+     * Genera el SVG exacto de una hoja para vista previa instantánea en pantalla
+     */
+    function buildSheetSVG(student, geom) {
+      const qrPayload = JSON.stringify({
+        id: student.codigo,
+        h: geom.hash,
+        n: geom.questions,
+        o: geom.optionsCount
+      });
+      const qrMatrix = PureQR.encode(qrPayload);
+      const cell = 22.0 / qrMatrix.size;
+
+      let qrRects = '';
+      for (let r = 0; r < qrMatrix.size; r++) {
+        for (let c = 0; c < qrMatrix.size; c++) {
+          if (qrMatrix.modules[r][c]) {
+            qrRects += `<rect x="${(184.2 + c * cell).toFixed(2)}" y="${(7.8 + r * cell).toFixed(2)}" width="${(cell + 0.03).toFixed(2)}" height="${(cell + 0.03).toFixed(2)}" fill="#000"/>`;
+          }
+        }
+      }
+
+      const ms = geom.markerSize;
+      const fiducialsSvg = geom.fiducialsMm.map(c => {
+        const mx = c.x - ms / 2;
+        const my = c.y - ms / 2;
+        return `
+          <rect x="${mx}" y="${my}" width="${ms}" height="${ms}" fill="#000"/>
+          <rect x="${mx + 1.1}" y="${my + 1.1}" width="${ms - 2.2}" height="${ms - 2.2}" fill="#fff"/>
+          <rect x="${mx + 1.8}" y="${my + 1.8}" width="${ms - 3.6}" height="${ms - 3.6}" fill="#000"/>
+        `;
+      }).join('');
+
+      const fontMm = Math.max(1.9, Math.min(2.6, geom.bubbleDiamMm * 0.68));
+
+      const colsSvg = geom.columnBoxes.map(box => {
+        const headers = geom.letters.map((l, oIdx) => {
+          const lx = box.optsStartX + (oIdx + 0.5) * box.stepX;
+          return `<text x="${lx}" y="${box.y + 3.7}" font-size="${fontMm}" font-weight="800" text-anchor="middle" fill="#000">${l}</text>`;
+        }).join('');
+        return `
+          <rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.headerH}" fill="#ebebeb"/>
+          <rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="#000" stroke-width="0.32"/>
+          <line x1="${box.x}" y1="${box.y + box.headerH}" x2="${box.x + box.w}" y2="${box.y + box.headerH}" stroke="#000" stroke-width="0.32"/>
+          <text x="${box.x + box.numColW / 2}" y="${box.y + 3.7}" font-size="${fontMm}" font-weight="800" text-anchor="middle" fill="#000">#</text>
+          ${headers}
+        `;
+      }).join('');
+
+      let rowsSvg = '';
+      for (let q = 1; q <= geom.questions; q++) {
+        const cIdx = Math.floor((q - 1) / geom.rowsPerCol);
+        const rIdx = (q - 1) % geom.rowsPerCol;
+        const box = geom.columnBoxes[cIdx];
+        const rowTop = geom.gridTop + geom.colHeaderH + rIdx * geom.rowH;
+        const cy = rowTop + geom.rowH / 2;
+
+        if (rIdx % 2 === 1) {
+          rowsSvg += `<rect x="${box.x + 0.15}" y="${rowTop}" width="${box.w - 0.3}" height="${geom.rowH}" fill="#f4f4f5"/>`;
+        }
+        rowsSvg += `
+          <text x="${box.x + box.numColW - 0.6}" y="${cy + fontMm * 0.34}" font-size="${fontMm}" font-weight="700" text-anchor="end" fill="#000" font-family="JetBrains Mono, monospace">${q}</text>
+          <rect x="${box.x + box.w - 1.8}" y="${cy - 0.35}" width="1.2" height="0.7" fill="#000"/>
+        `;
+      }
+
+      const bubblesSvg = geom.bubbles.map(b => `
+        <circle cx="${b.xMm}" cy="${b.yMm}" r="${b.rMm}" fill="#fff" stroke="#000" stroke-width="0.28"/>
+        <text x="${b.xMm}" y="${b.yMm + fontMm * 0.30}" font-size="${fontMm * 0.88}" font-weight="700" text-anchor="middle" fill="#000">${b.optLetter}</text>
+      `).join('');
+
+      return `
+        <svg viewBox="0 0 ${geom.pageW} ${geom.pageH}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="font-family: Inter, sans-serif; display: block;">
+          <rect x="0" y="0" width="${geom.pageW}" height="${geom.pageH}" fill="#ffffff"/>
+          <line x1="7.5" y1="35.5" x2="208.4" y2="35.5" stroke="#000" stroke-width="0.45"/>
+
+          <text x="7.5" y="10.5" font-size="3.5" font-weight="800" fill="#000">${escapeHtml(appState.institution.toUpperCase())}</text>
+          <text x="7.5" y="14.8" font-size="2.85" font-weight="700" fill="#000">${escapeHtml(appState.title.toUpperCase())}</text>
+
+          <rect x="7.5" y="17.0" width="172.0" height="12.0" fill="#f5f5f5" stroke="#000" stroke-width="0.3"/>
+          <text x="9.5" y="20.5" font-size="2.1" font-weight="700" fill="#52525b">ESTUDIANTE:</text>
+          <text x="126.0" y="20.5" font-size="2.1" font-weight="700" fill="#52525b">CÓDIGO ID:</text>
+          <text x="161.0" y="20.5" font-size="2.1" font-weight="700" fill="#52525b">GRADO:</text>
+
+          <text x="9.5" y="25.8" font-size="2.95" font-weight="800" fill="#000">${escapeHtml(student.nombre.toUpperCase().slice(0, 44))}</text>
+          <text x="126.0" y="25.8" font-size="3.05" font-weight="700" fill="#000" font-family="JetBrains Mono, monospace">${escapeHtml(student.codigo)}</text>
+          <text x="161.0" y="25.8" font-size="3.05" font-weight="800" fill="#000">${escapeHtml(student.grado)}</text>
+
+          <text x="7.5" y="33.2" font-size="2.25" fill="#000">Rellene completamente el círculo con lápiz N° 2 o bolígrafo negro. No marque dos opciones.</text>
+          <text x="179.5" y="33.2" font-size="2.35" font-weight="700" text-anchor="end" fill="#000" font-family="JetBrains Mono, monospace">HASH: ${geom.hash}</text>
+
+          <rect x="182.0" y="6.5" width="26.4" height="27.5" fill="#fff" stroke="#000" stroke-width="0.35"/>
+          ${qrRects}
+          <text x="195.2" y="32.8" font-size="2.15" font-weight="700" text-anchor="middle" fill="#000" font-family="JetBrains Mono, monospace">${escapeHtml(student.codigo)}</text>
+
+          ${fiducialsSvg}
+          ${colsSvg}
+          ${rowsSvg}
+          ${bubblesSvg}
+
+          <text x="7.5" y="274.5" font-size="2.15" fill="#3f3f46" font-family="JetBrains Mono, monospace">PLANTILLA: ${geom.hash} | ${geom.questions} PREGUNTAS × ${geom.optionsCount} OPCIONES (A-${geom.letters[geom.letters.length - 1]})</text>
+          <text x="208.4" y="274.5" font-size="2.15" text-anchor="end" fill="#3f3f46" font-family="JetBrains Mono, monospace">CARTA 215.9 × 279.4 MM</text>
+        </svg>
+      `;
+    }
+
+    /**
+     * Genera el PDF multipágina binario en memoria, intenta descarga directa
+     * y abre inmediatamente el Visor PDF integrado para garantizar acceso total.
+     */
+    function generateAndOpenPDF(singleStudentOnly = false) {
+      const targetStudents = singleStudentOnly
+        ? [appState.students[appState.selectedStudentIndex] || { codigo: '', nombre: 'SIN ESTUDIANTE', grado: '' }]
+        : appState.students;
+
+      if (!targetStudents || targetStudents.length === 0) {
+        showToast('Agrega al menos un estudiante primero.', 'error');
+        return;
+      }
+
+      const logEl = document.getElementById('pdf-engine-log');
+      logEl.textContent = `Generando ${targetStudents.length} página(s) vectoriales...`;
+
+      const t0 = performance.now();
+      const geom = computeSheetGeometry();
+      const pdf = new PurePDFBuilder();
+
+      targetStudents.forEach(student => {
+        renderStudentPageToPDF(pdf, student, geom);
+      });
+
+      const blob = pdf.buildBlob();
+      const elapsed = Math.round(performance.now() - t0);
+
+      if (appState.lastPdfBlobUrl) {
+        URL.revokeObjectURL(appState.lastPdfBlobUrl);
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      appState.lastPdfBlobUrl = blobUrl;
+
+      const fileName = singleStudentOnly
+        ? `Hoja_OMR_${targetStudents[0].codigo}_${geom.hash}.pdf`
+        : `Lote_OMR_${targetStudents.length}Est_${geom.hash}.pdf`;
+
+      // 1. Disparar descarga directa
+      try {
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (e) {}
+
+      // 2. Abrir en el visor PDF integrado (garantiza visualización e impresión incluso en iframes restringidos)
+      const modal = document.getElementById('pdf-viewer-modal');
+      const iframe = document.getElementById('pdf-preview-iframe');
+      const dlLink = document.getElementById('pdf-direct-download-link');
+      document.getElementById('pdf-modal-title').textContent = `${fileName} (${targetStudents.length} pág. Carta)`;
+      dlLink.href = blobUrl;
+      dlLink.download = fileName;
+      iframe.src = blobUrl;
+      modal.classList.remove('hidden');
+
+      logEl.textContent = `OK: ${targetStudents.length} pág(s) generadas en ${elapsed}ms (${(blob.size / 1024).toFixed(1)} KB).`;
+      showToast(`PDF listo (${targetStudents.length} hoja${targetStudents.length > 1 ? 's' : ''}).`);
+    }
+
+    function openBatchGalleryModal() {
+      const geom = computeSheetGeometry();
+      const container = document.getElementById('gallery-grid-container');
+      document.getElementById('gallery-modal-title').textContent = `Lote Completo (${appState.students.length} hojas tamaño Carta — ${geom.hash})`;
+
+      container.innerHTML = appState.students.map((st, idx) => `
+        <div class="flex flex-col items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-slate-800 w-full max-w-[440px]">
+          <div class="w-full flex items-center justify-between text-xs px-1">
+            <span class="font-bold text-cyan-300 font-mono-code">Pág ${idx + 1}: ${escapeHtml(st.codigo)}</span>
+            <span class="text-slate-300 truncate max-w-[220px]">${escapeHtml(st.nombre)}</span>
+          </div>
+          <div class="w-full aspect-[215.9/279.4] bg-white rounded-lg overflow-hidden shadow-lg">
+            ${buildSheetSVG(st, geom)}
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('gallery-modal').classList.remove('hidden');
+    }
+
+    /**
+     * =========================================================================
+     * 5. VISTA PREVIA EN PANTALLA Y GESTIÓN DE ESTUDIANTES
+     * =========================================================================
+     */
+    function renderLivePreview() {
+      const geom = computeSheetGeometry();
+      document.getElementById('hash-display').textContent = geom.hash;
+      document.getElementById('global-hash-badge').textContent = geom.hash;
+      document.getElementById('preview-metrics-label').textContent =
+        `${geom.cols} Cols × ${geom.rowsPerCol} Filas | Burbuja ${geom.bubbleDiamMm.toFixed(2)}mm`;
+
+      const student = appState.students[appState.selectedStudentIndex] || { codigo: '', nombre: 'SIN ESTUDIANTE', grado: '' };
+      document.getElementById('svg-sheet-preview').innerHTML = buildSheetSVG(student, geom);
+      adjustPreviewScale();
+    }
+
+    let autoScaleEnabled = true;
+    function adjustPreviewScale() {
+      const wrapper = document.getElementById('preview-scale-wrapper');
+      if (!autoScaleEnabled) {
+        wrapper.style.transform = 'scale(1)';
+        wrapper.style.marginBottom = '0px';
+        return;
+      }
+      const parentW = wrapper.parentElement.clientWidth - 32;
+      const basePxW = 816; // 215.9 mm a 96 dpi
+      const basePxH = 1056;
+      const scale = Math.min(1, Math.max(0.40, parentW / basePxW));
+      wrapper.style.transform = `scale(${scale})`;
+      wrapper.style.marginBottom = `-${Math.round(basePxH * (1 - scale))}px`;
+    }
+
+    function renderStudentsUI() {
+      const tbody = document.getElementById('students-table-body');
+      const select = document.getElementById('preview-student-select');
+      const filter = document.getElementById('search-student').value.trim().toLowerCase();
+
+      document.getElementById('student-counter-badge').textContent = `${appState.students.length} est.`;
+
+      select.innerHTML = appState.students.map((s, idx) => `
+        <option value="${idx}" ${idx === appState.selectedStudentIndex ? 'selected' : ''}>
+          ${escapeHtml(s.codigo)} — ${escapeHtml(s.nombre)} (${escapeHtml(s.grado)})
+        </option>
+      `).join('');
+
+      const filtered = appState.students
+        .map((s, idx) => ({ ...s, originalIdx: idx }))
+        .filter(s =>
+          s.codigo.toLowerCase().includes(filter) ||
+          s.nombre.toLowerCase().includes(filter) ||
+          s.grado.toLowerCase().includes(filter)
+        );
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="py-3 text-center text-slate-500">Sin resultados</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(s => `
+        <tr class="hover:bg-slate-900/90 transition ${s.originalIdx === appState.selectedStudentIndex ? 'bg-indigo-950/40' : ''}">
+          <td class="py-1.5 px-2 font-mono-code text-cyan-300 cursor-pointer" onclick="selectPreviewStudent(${s.originalIdx})">${escapeHtml(s.codigo)}</td>
+          <td class="py-1.5 px-2 text-slate-200 truncate max-w-[145px] cursor-pointer" onclick="selectPreviewStudent(${s.originalIdx})">${escapeHtml(s.nombre)}</td>
+          <td class="py-1.5 px-2 text-slate-300">${escapeHtml(s.grado)}</td>
+          <td class="py-1.5 px-2 text-right">
+            <button type="button" onclick="removeStudent(${s.originalIdx})" class="text-rose-400 hover:text-rose-300 font-bold px-1.5 py-0.5 rounded hover:bg-rose-950/60 cursor-pointer">✕</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    window.selectPreviewStudent = function(idx) {
+      appState.selectedStudentIndex = idx;
+      renderStudentsUI();
+      renderLivePreview();
+    };
+
+    window.removeStudent = function(idx) {
+      appState.students.splice(idx, 1);
+      if (appState.selectedStudentIndex >= appState.students.length) {
+        appState.selectedStudentIndex = Math.max(0, appState.students.length - 1);
+      }
+      saveStudentsToStorage();
+      renderStudentsUI();
+      renderLivePreview();
+    };
+
+    // Analizador CSV compatible con campos entre comillas y comillas escapadas.
+    function parseCSVRow(line, delimiter) {
+      const fields = [];
+      let value = '';
+      let quoted = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+
+        if (ch === '"') {
+          if (quoted && line[i + 1] === '"') {
+            value += '"';
+            i++;
+          } else {
+            quoted = !quoted;
+          }
+        } else if (ch === delimiter && !quoted) {
+          fields.push(value.trim());
+          value = '';
+        } else {
+          value += ch;
+        }
+      }
+
+      fields.push(value.trim());
+      return fields;
+    }
+
+    function parseBulkStudentsText(rawText) {
+      const cleanText = String(rawText || '').replace(/^\uFEFF/, '').trim();
+      const selectedGroupId = document.getElementById('student-group-select')?.value;
+      if (!selectedGroupId) {
+        showToast('Primero crea o selecciona una carpeta para importar estudiantes.', 'error');
+        return;
+      }
+      if (!cleanText) {
+        showToast('El archivo CSV está vacío.', 'error');
+        return;
+      }
+
+      const lines = cleanText.split(/\r\n|\n|\r/).filter(line => line.trim());
+      const firstLine = lines[0];
+      const delimiter = (firstLine.match(/;/g) || []).length >
+                        (firstLine.match(/,/g) || []).length ? ';' : ',';
+
+      let imported = 0;
+      let updated = 0;
+      let skipped = 0;
+      const seen = new Set();
+      const importedStudents = [];
+
+      lines.forEach((line, lineIndex) => {
+        const parts = parseCSVRow(line, delimiter);
+
+        // Se aceptan exactamente tres columnas: codigo,nombre,grado.
+        if (parts.length !== 3) {
+          skipped++;
+          return;
+        }
+
+        const normalizedHeader = parts.map(p =>
+          p.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        );
+        if (lineIndex === 0 &&
+            normalizedHeader[0] === 'codigo' &&
+            normalizedHeader[1] === 'nombre' &&
+            normalizedHeader[2] === 'grado') {
+          return;
+        }
+
+        // El código se conserva como texto para no perder ceros iniciales.
+        const codigo = parts[0].trim();
+        const nombre = parts[1].trim().replace(/\s+/g, ' ').toUpperCase();
+        const grado = parts[2].trim();
+
+        if (!/^\d{10}$/.test(codigo) || !nombre || !grado) {
+          skipped++;
+          return;
+        }
+
+        if (seen.has(codigo)) {
+          skipped++;
+          return;
+        }
+        seen.add(codigo);
+
+        const student = { codigo, nombre, grado };
+        importedStudents.push(student);
+        const existingIndex = appState.students.findIndex(s => s.codigo === codigo);
+
+        if (existingIndex >= 0) {
+          appState.students[existingIndex] = student;
+          updated++;
+        } else {
+          appState.students.push(student);
+          imported++;
+        }
+      });
+
+      if (imported + updated > 0) {
+        appState.selectedStudentIndex = Math.max(0, appState.students.length - 1);
+        saveStudentsToStorage();
+        renderStudentsUI();
+        renderLivePreview();
+
+        syncImportedStudentsToSupabase(importedStudents, selectedGroupId).catch(err => {
+          console.error(err);
+          showToast('No se pudo sincronizar la importación con Supabase: ' + err.message, 'error');
+        });
+
+        const summary = `${imported} nuevo(s), ${updated} actualizado(s)` +
+                        (skipped ? `, ${skipped} fila(s) omitida(s)` : '');
+        showToast(`Importación completada: ${summary}.`);
+      } else {
+        showToast(
+          'No se importaron estudiantes. Usa tres columnas: codigo,nombre,grado. El código debe tener 10 cifras.',
+          'error'
+        );
+      }
+    }
+    /**
+     * =========================================================================
+     * 6. MÓDULO 2: CLAVE DE RESPUESTAS Y ESCÁNER MÓVIL (HOMOGRAFÍA 3×3 + 1/0)
+     * =========================================================================
+     */
+    function generateRandomAnswerKey(notify = true) {
+      const letters = ALL_LETTERS.slice(0, appState.optionsCount);
+      const arr = [];
+      for (let i = 0; i < appState.questions; i++) {
+        arr.push(letters[Math.floor(Math.random() * letters.length)]);
+      }
+      appState.answerKey = arr;
+      syncAnswerKeyUI();
+      if (notify) showToast(`Clave aleatoria generada (${arr.length} respuestas).`);
+    }
+
+    function syncAnswerKeyUI() {
+      const letters = ALL_LETTERS.slice(0, appState.optionsCount);
+      document.getElementById('allowed-letters-hint').textContent = `A–${letters[letters.length - 1]}`;
+      document.getElementById('answer-key-input').value = appState.answerKey.join('');
+
+      const badge = document.getElementById('key-status-badge');
+      const ok = appState.answerKey.length === appState.questions;
+      badge.textContent = `${appState.answerKey.length} / ${appState.questions} válidas`;
+      badge.className = ok
+        ? 'font-mono-code text-[11px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+        : 'font-mono-code text-[11px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-700/60';
+
+      renderVisualKeyEditor();
+    }
+
+    function parseAnswerKeyString(raw) {
+      const allowed = new Set(ALL_LETTERS.slice(0, appState.optionsCount));
+      const tokens = raw.toUpperCase().match(/[A-G]/g) || [];
+      appState.answerKey = tokens.filter(ch => allowed.has(ch)).slice(0, appState.questions);
+      syncAnswerKeyUI();
+    }
+
+    function renderVisualKeyEditor() {
+      const container = document.getElementById('visual-key-editor');
+      if (container.classList.contains('hidden')) return;
+      const letters = ALL_LETTERS.slice(0, appState.optionsCount);
+      let html = '';
+      for (let i = 0; i < appState.questions; i++) {
+        const cur = appState.answerKey[i] || '';
+        html += `
+          <div class="flex items-center justify-between bg-slate-950 px-2 py-1 rounded border border-slate-800 text-xs">
+            <span class="font-mono-code text-slate-400">P${i + 1}:</span>
+            <select onchange="updateSingleKey(${i}, this.value)" class="bg-slate-900 text-emerald-400 font-mono-code font-bold rounded px-1 py-0.5 border border-slate-700">
+              <option value="">-</option>
+              ${letters.map(l => `<option value="${l}" ${cur === l ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </div>
+        `;
+      }
+      container.innerHTML = html;
+    }
+
+    window.updateSingleKey = function(idx, val) {
+      appState.answerKey[idx] = val;
+      syncAnswerKeyUI();
+    };
+
+    function solveLinearSystem(A, b) {
+      const n = b.length;
+      const M = A.map((row, i) => [...row, b[i]]);
+      for (let col = 0; col < n; col++) {
+        let maxRow = col;
+        for (let row = col + 1; row < n; row++) {
+          if (Math.abs(M[row][col]) > Math.abs(M[maxRow][col])) maxRow = row;
+        }
+        [M[col], M[maxRow]] = [M[maxRow], M[col]];
+        if (Math.abs(M[col][col]) < 1e-10) continue;
+        for (let row = col + 1; row < n; row++) {
+          const factor = M[row][col] / M[col][col];
+          for (let k = col; k <= n; k++) M[row][k] -= factor * M[col][k];
+        }
+      }
+      const x = new Array(n).fill(0);
+      for (let i = n - 1; i >= 0; i--) {
+        let sum = M[i][n];
+        for (let j = i + 1; j < n; j++) sum -= M[i][j] * x[j];
+        x[i] = Math.abs(M[i][i]) > 1e-10 ? sum / M[i][i] : 0;
+      }
+      return x;
+    }
+
+    function computeHomographyMatrix(dstCorners) {
+      const src = [{ u: 0, v: 0 }, { u: 1, v: 0 }, { u: 1, v: 1 }, { u: 0, v: 1 }];
+      const A = [], b = [];
+      for (let i = 0; i < 4; i++) {
+        const { u, v } = src[i];
+        const { x, y } = dstCorners[i];
+        A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]);
+        b.push(x);
+        A.push([0, 0, 0, u, v, 1, -u * y, -v * y]);
+        b.push(y);
+      }
+      const h = solveLinearSystem(A, b);
+      return [[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1.0]];
+    }
+
+    function projectPoint(H, u, v) {
+      const w = H[2][0] * u + H[2][1] * v + H[2][2];
+      return {
+        x: (H[0][0] * u + H[0][1] * v + H[0][2]) / w,
+        y: (H[1][0] * u + H[1][1] * v + H[1][2]) / w
+      };
+    }
+
+    function detectFiducialCorners(imageData, width, height, qrLocation) {
+      const data = imageData.data;
+      let lumSum = 0, count = 0;
+      for (let y = 0; y < height; y += 4) {
+        for (let x = 0; x < width; x += 4) {
+          const idx = (y * width + x) * 4;
+          lumSum += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+          count++;
+        }
+      }
+      const darkThreshold = Math.min(135, (lumSum / Math.max(1, count)) * 0.68);
+      let searchMinY = Math.floor(height * 0.08);
+      if (qrLocation) {
+        const qrBottom = Math.max(qrLocation.bottomLeftCorner.y, qrLocation.bottomRightCorner.y);
+        searchMinY = Math.max(0, Math.floor(qrBottom - height * 0.01));
+      }
+
+      const regions = [
+        { name: 'TL', x0: 0, y0: searchMinY, x1: Math.floor(width * 0.28), y1: Math.floor(searchMinY + height * 0.25), tx: 0, ty: searchMinY },
+        { name: 'TR', x0: Math.floor(width * 0.72), y0: searchMinY, x1: width, y1: Math.floor(searchMinY + height * 0.25), tx: width, ty: searchMinY },
+        { name: 'BR', x0: Math.floor(width * 0.72), y0: Math.floor(height * 0.75), x1: width, y1: height, tx: width, ty: height },
+        { name: 'BL', x0: 0, y0: Math.floor(height * 0.75), x1: Math.floor(width * 0.28), y1: height, tx: 0, ty: height }
+      ];
+
+      const minBox = Math.max(6, Math.round(width * 0.012));
+      const maxBox = Math.max(24, Math.round(width * 0.045));
+
+      return regions.map(reg => {
+        let bestScore = -1, bestCenter = null;
+        const step = Math.max(2, Math.floor(minBox / 3));
+        const boxSize = Math.round((minBox + maxBox) * 0.45);
+        for (let y = reg.y0; y < reg.y1 - minBox; y += step) {
+          for (let x = reg.x0; x < reg.x1 - minBox; x += step) {
+            let darkPixels = 0, totalPixels = 0;
+            for (let dy = 0; dy < boxSize; dy += 2) {
+              for (let dx = 0; dx < boxSize; dx += 2) {
+                const px = x + dx, py = y + dy;
+                if (px >= width || py >= height) continue;
+                const idx = (py * width + px) * 4;
+                const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                if (lum < darkThreshold) darkPixels++;
+                totalPixels++;
+              }
+            }
+            const fill = darkPixels / Math.max(1, totalPixels);
+            if (fill >= 0.55 && fill <= 0.92) {
+              const cx = x + boxSize / 2, cy = y + boxSize / 2;
+              const distNorm = Math.hypot(cx - reg.tx, cy - reg.ty) / Math.hypot(width, height);
+              const score = fill - distNorm * 0.35;
+              if (score > bestScore) { bestScore = score; bestCenter = { x: cx, y: cy }; }
+            }
+          }
+        }
+        if (!bestCenter) {
+          return {
+            x: reg.name.includes('L') ? width * 0.046 : width * 0.954,
+            y: reg.name.includes('T') ? Math.max(height * 0.145, searchMinY + height * 0.02) : height * 0.96
+          };
+        }
+        return bestCenter;
+      });
+    }
+
+    function evaluateBubblesWithHomography(imageData, width, height, corners, geom) {
+      const H = computeHomographyMatrix(corners);
+      const data = imageData.data;
+      const byQuestion = new Map();
+      geom.bubbles.forEach(b => {
+        if (!byQuestion.has(b.q)) byQuestion.set(b.q, []);
+        byQuestion.get(b.q).push(b);
+      });
+
+      const evaluations = [];
+      const binaryVector = [];
+      const pxSpanX = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+      const pxSpanY = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
+
+      for (let q = 1; q <= geom.questions; q++) {
+        const qBubbles = byQuestion.get(q) || [];
+        const expectedLetter = appState.answerKey[q - 1] || null;
+
+        const sampled = qBubbles.map(b => {
+          const pt = projectPoint(H, b.u, b.v);
+          const rx = Math.max(2, b.rU * pxSpanX * 0.72);
+          const ry = Math.max(2, b.rV * pxSpanY * 0.72);
+          let lumSum = 0, samples = 0;
+          const xMin = Math.max(0, Math.floor(pt.x - rx));
+          const xMax = Math.min(width - 1, Math.ceil(pt.x + rx));
+          const yMin = Math.max(0, Math.floor(pt.y - ry));
+          const yMax = Math.min(height - 1, Math.ceil(pt.y + ry));
+
+          for (let py = yMin; py <= yMax; py++) {
+            for (let px = xMin; px <= xMax; px++) {
+              if (((px - pt.x) / rx) ** 2 + ((py - pt.y) / ry) ** 2 <= 1.0) {
+                const idx = (py * width + px) * 4;
+                lumSum += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+                samples++;
+              }
+            }
+          }
+          const meanLum = samples > 0 ? lumSum / samples : 255;
+          return {
+            ...b,
+            px: pt.x,
+            py: pt.y,
+            radiusPx: Math.max(4, (rx + ry) * 0.65),
+            darkness: 1 - (meanLum / 255)
+          };
+        });
+
+        const minDark = Math.min(...sampled.map(s => s.darkness));
+        const marked = sampled.filter(s => (s.darkness - minDark) >= appState.thresholdRatio);
+
+        let markedLetter = null, status = 'blank';
+        if (marked.length === 1) { markedLetter = marked[0].optLetter; status = 'single'; }
+        else if (marked.length > 1) { status = 'multiple'; }
+
+        const isCorrect = (status === 'single' && expectedLetter && markedLetter === expectedLetter) ? 1 : 0;
+        binaryVector.push(isCorrect);
+        evaluations.push({ q, markedLetter, expectedLetter, isCorrect, status, sampled });
+      }
+      return { evaluations, binaryVector };
+    }
+
+    function processImageSource(imgElement, preserveManualCorners = false, simulatedMeta = null) {
+      const canvas = document.getElementById('diagnostic-canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const maxDim = 1400;
+      let targetW = imgElement.width || imgElement.videoWidth;
+      let targetH = imgElement.height || imgElement.videoHeight;
+      if (targetW > maxDim || targetH > maxDim) {
+        const ratio = Math.min(maxDim / targetW, maxDim / targetH);
+        targetW = Math.round(targetW * ratio);
+        targetH = Math.round(targetH * ratio);
+      }
+      canvas.width = targetW;
+      canvas.height = targetH;
+      ctx.drawImage(imgElement, 0, 0, targetW, targetH);
+
+      document.getElementById('canvas-empty-placeholder').classList.add('hidden');
+      appState.currentImage = imgElement;
+      const imageData = ctx.getImageData(0, 0, targetW, targetH);
+
+      let qrData = simulatedMeta, qrLocation = null;
+      if (!qrData && typeof jsQR !== 'undefined') {
+        const code = jsQR(imageData.data, targetW, targetH, { inversionAttempts: 'dontInvert' });
+        if (code && code.data) {
+          qrLocation = code.location;
+          try { qrData = JSON.parse(code.data); } catch (e) { qrData = { id: code.data.slice(0, 10) }; }
+        }
+      }
+
+      if (!preserveManualCorners || !appState.fiducialCorners) {
+        appState.fiducialCorners = detectFiducialCorners(imageData, targetW, targetH, qrLocation);
+      }
+
+      const geom = computeSheetGeometry();
+      const { evaluations, binaryVector } = evaluateBubblesWithHomography(
+        imageData, targetW, targetH, appState.fiducialCorners, geom
+      );
+
+      let studentCode = qrData && qrData.id ? String(qrData.id) : null;
+      let hashStatus = '';
+      if (qrData && qrData.h) {
+        hashStatus = qrData.h === geom.hash
+          ? `Hash verificado (${qrData.h})`
+          : `Alerta: Hash QR (${qrData.h}) ≠ Plantilla (${geom.hash})`;
+      }
+      if (!studentCode) {
+        const fb = appState.students[appState.selectedStudentIndex];
+        studentCode = fb ? fb.codigo : '0000000000';
+        hashStatus = 'QR no detectado — Estudiante seleccionado';
+      }
+
+      const stRec = appState.students.find(s => s.codigo === studentCode);
+      const stLabel = stRec ? `${studentCode} (${stRec.nombre})` : studentCode;
+      const hits = binaryVector.reduce((a, b) => a + b, 0);
+
+      appState.lastEvaluation = { codigo: studentCode, results: binaryVector, evaluations, hits, total: geom.questions };
+
+      document.getElementById('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse';
+      document.getElementById('scanner-status-text').textContent = `${hashStatus} • Aciertos: ${hits}/${geom.questions}`;
+      const pill = document.getElementById('detected-student-pill');
+      pill.textContent = `ID: ${stLabel}`;
+      pill.classList.remove('hidden');
+
+      document.getElementById('btn-reprocess-corners').classList.remove('hidden');
+      document.getElementById('btn-save-current-scan').classList.remove('hidden');
+
+      drawDiagnosticOverlay(ctx, imageData, evaluations, appState.fiducialCorners);
+    }
+
+    function drawDiagnosticOverlay(ctx, baseImageData, evaluations, corners) {
+      ctx.putImageData(baseImageData, 0, 0);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(corners[0].x, corners[0].y);
+      ctx.lineTo(corners[1].x, corners[1].y);
+      ctx.lineTo(corners[2].x, corners[2].y);
+      ctx.lineTo(corners[3].x, corners[3].y);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+
+      evaluations.forEach(ev => {
+        ev.sampled.forEach(b => {
+          const isMarked = b.optLetter === ev.markedLetter || (ev.status === 'multiple' && (b.darkness - Math.min(...ev.sampled.map(s => s.darkness))) >= appState.thresholdRatio);
+          const isExpected = b.optLetter === ev.expectedLetter;
+          if (isMarked && ev.isCorrect === 1) {
+            ctx.beginPath(); ctx.arc(b.px, b.py, b.radiusPx + 2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(16, 185, 129, 0.45)'; ctx.fill();
+            ctx.lineWidth = 2; ctx.strokeStyle = '#10b981'; ctx.stroke();
+          } else if (isMarked && ev.isCorrect === 0) {
+            ctx.beginPath(); ctx.arc(b.px, b.py, b.radiusPx + 2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(244, 63, 94, 0.48)'; ctx.fill();
+            ctx.lineWidth = 2; ctx.strokeStyle = '#f43f5e'; ctx.stroke();
+          } else if (isExpected && ev.isCorrect === 0) {
+            ctx.beginPath(); ctx.arc(b.px, b.py, b.radiusPx + 1.5, 0, Math.PI * 2);
+            ctx.lineWidth = 1.8; ctx.strokeStyle = '#facc15'; ctx.stroke();
+          }
+        });
+      });
+
+      const labels = ['TL', 'TR', 'BR', 'BL'];
+      corners.forEach((pt, idx) => {
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.35)'; ctx.fill();
+        ctx.lineWidth = 2.5; ctx.strokeStyle = '#22d3ee'; ctx.stroke();
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff'; ctx.fill();
+        ctx.font = 'bold 10px JetBrains Mono, monospace';
+        ctx.fillStyle = '#22d3ee';
+        ctx.fillText(labels[idx], pt.x + 14, pt.y + 4);
+      });
+    }
+
+    function runSimulatedScan() {
+      if (appState.answerKey.length !== appState.questions) generateRandomAnswerKey(false);
+      const geom = computeSheetGeometry();
+      const student = appState.students[appState.selectedStudentIndex] || { codigo: '', nombre: 'SIN ESTUDIANTE', grado: '' };
+      const scale = 4; // 4 px/mm -> 864 x 1118 px
+      const simCanvas = document.createElement('canvas');
+      simCanvas.width = Math.round(geom.pageW * scale);
+      simCanvas.height = Math.round(geom.pageH * scale);
+      const ctx = simCanvas.getContext('2d');
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, simCanvas.width, simCanvas.height);
+
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 14px Inter, sans-serif';
+      ctx.fillText(`${appState.institution} — ${student.nombre} (${student.codigo})`, 30, 42);
+
+      // Dibujar QR real
+      const qrPayload = JSON.stringify({ id: student.codigo, h: geom.hash, n: geom.questions, o: geom.optionsCount });
+      const qr = PureQR.encode(qrPayload);
+      const qrCell = (22.0 * scale) / qr.size;
+      for (let r = 0; r < qr.size; r++) {
+        for (let c = 0; c < qr.size; c++) {
+          if (qr.modules[r][c]) {
+            ctx.fillRect(184.2 * scale + c * qrCell, 7.8 * scale + r * qrCell, qrCell, qrCell);
+          }
+        }
+      }
+
+      // Fiduciales
+      const ms = geom.markerSize * scale;
+      geom.fiducialsMm.forEach(c => {
+        const mx = c.x * scale - ms / 2, my = c.y * scale - ms / 2;
+        ctx.fillStyle = '#000'; ctx.fillRect(mx, my, ms, ms);
+        ctx.fillStyle = '#fff'; ctx.fillRect(mx + 4.4, my + 4.4, ms - 8.8, ms - 8.8);
+        ctx.fillStyle = '#000'; ctx.fillRect(mx + 7.2, my + 7.2, ms - 14.4, ms - 14.4);
+      });
+
+      const simAnswers = new Map();
+      for (let q = 1; q <= geom.questions; q++) {
+        const exp = appState.answerKey[q - 1];
+        const r = Math.random();
+        if (r < 0.75) simAnswers.set(q, [exp]);
+        else if (r < 0.94) {
+          const w = geom.letters.filter(l => l !== exp);
+          simAnswers.set(q, [w[Math.floor(Math.random() * w.length)]]);
+        } else if (r < 0.97) simAnswers.set(q, [geom.letters[0], geom.letters[1]]);
+        else simAnswers.set(q, []);
+      }
+
+      geom.bubbles.forEach(b => {
+        const cx = b.xMm * scale, cy = b.yMm * scale, rad = b.rMm * scale;
+        const chosen = (simAnswers.get(b.q) || []).includes(b.optLetter);
+        ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+        if (chosen) { ctx.fillStyle = '#0f172a'; ctx.fill(); }
+        else { ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 1.1; ctx.strokeStyle = '#000'; ctx.stroke(); }
+      });
+
+      appState.fiducialCorners = geom.fiducialsMm.map(c => ({ x: c.x * scale, y: c.y * scale }));
+      processImageSource(simCanvas, true, null);
+      showToast(`Escaneo simulado completado para ${student.nombre}`);
+    }
+
+    async function startMobileCamera() {
+      // getUserMedia requiere un contexto seguro y permisos del navegador.
+      if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const localFile = window.location.protocol === 'file:';
+        showToast(
+          localFile
+            ? 'Chrome no habilitó la cámara al abrir este archivo directamente. Abre la aplicación desde una dirección HTTPS o localhost.'
+            : 'Este contexto no permite acceder a la cámara. Abre la aplicación desde HTTPS o localhost y revisa los permisos de Chrome.',
+          'error'
+        );
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false
+        });
+        appState.cameraStream = stream;
+        const video = document.getElementById('camera-video');
+        video.srcObject = stream;
+        document.getElementById('camera-viewport').classList.remove('hidden');
+        try { await video.play(); } catch (_) { /* Algunos navegadores inician la reproducción automáticamente. */ }
+        showToast('Cámara activada.');
+      } catch (e) {
+        let message = 'No se pudo iniciar la cámara.';
+        if (e && e.name === 'NotAllowedError') message = 'Permiso de cámara denegado. Autoriza la cámara para este sitio en Chrome.';
+        else if (e && e.name === 'NotFoundError') message = 'No se encontró una cámara disponible en este dispositivo.';
+        else if (e && e.name === 'NotReadableError') message = 'La cámara está ocupada o no se puede acceder a ella. Cierra otras aplicaciones que la estén usando.';
+        else if (e && e.name === 'OverconstrainedError') message = 'La cámara no admite la configuración solicitada.';
+        else if (e && e.name === 'SecurityError') message = 'Chrome bloqueó el acceso por motivos de seguridad. Usa HTTPS o localhost.';
+        showToast(message, 'error');
+        console.error('Error al iniciar la cámara:', e);
+      }
+    }
+
+    function stopMobileCamera() {
+      if (appState.cameraStream) {
+        appState.cameraStream.getTracks().forEach(t => t.stop());
+        appState.cameraStream = null;
+      }
+      document.getElementById('camera-viewport').classList.add('hidden');
+    }
+
+    function bindCanvasCornerDragging() {
+      const canvas = document.getElementById('diagnostic-canvas');
+      const getPos = (cx, cy) => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: (cx - rect.left) * (canvas.width / rect.width), y: (cy - rect.top) * (canvas.height / rect.height) };
+      };
+      const down = (cx, cy) => {
+        if (!appState.fiducialCorners) return;
+        const pos = getPos(cx, cy);
+        let best = -1, minD = 38;
+        appState.fiducialCorners.forEach((c, i) => {
+          const d = Math.hypot(c.x - pos.x, c.y - pos.y);
+          if (d < minD) { minD = d; best = i; }
+        });
+        appState.draggingCornerIdx = best;
+      };
+      const move = (cx, cy) => {
+        if (appState.draggingCornerIdx < 0 || !appState.fiducialCorners) return;
+        const pos = getPos(cx, cy);
+        appState.fiducialCorners[appState.draggingCornerIdx] = {
+          x: Math.max(0, Math.min(canvas.width, pos.x)),
+          y: Math.max(0, Math.min(canvas.height, pos.y))
+        };
+        if (appState.currentImage) {
+          processImageSource(appState.currentImage, true, appState.lastEvaluation ? { id: appState.lastEvaluation.codigo } : null);
+        }
+      };
+      const up = () => { appState.draggingCornerIdx = -1; };
+
+      canvas.addEventListener('mousedown', e => down(e.clientX, e.clientY));
+      window.addEventListener('mousemove', e => move(e.clientX, e.clientY));
+      window.addEventListener('mouseup', up);
+      canvas.addEventListener('touchstart', e => { if (e.touches.length === 1) down(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+      canvas.addEventListener('touchmove', e => { if (appState.draggingCornerIdx >= 0 && e.touches.length === 1) { e.preventDefault(); move(e.touches[0].clientX, e.touches[0].clientY); } }, { passive: false });
+      window.addEventListener('touchend', up);
+    }
+
+    function saveCurrentEvaluationRecord() {
+      if (!appState.lastEvaluation) return;
+      const { codigo, results } = appState.lastEvaluation;
+      const idx = appState.scannedRecords.findIndex(r => r.codigo === codigo);
+      if (idx >= 0) appState.scannedRecords[idx] = { codigo, results };
+      else appState.scannedRecords.push({ codigo, results });
+      saveScansToStorage();
+      renderScannedRecordsTable();
+      showToast(`Registro binario guardado: ${codigo}`);
+    }
+
+    function renderScannedRecordsTable() {
+      const tbody = document.getElementById('scanned-results-tbody');
+      document.getElementById('scanned-count-badge').textContent = `${appState.scannedRecords.length} hojas`;
+      if (appState.scannedRecords.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-slate-500 text-xs">Sin hojas escaneadas.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = appState.scannedRecords.map((rec, idx) => {
+        const prev = rec.results.slice(0, 14).join(',') + (rec.results.length > 14 ? '...' : '');
+        return `
+          <tr class="hover:bg-slate-900">
+            <td class="py-1.5 px-2 font-mono-code font-bold text-emerald-300">${escapeHtml(rec.codigo)}</td>
+            <td class="py-1.5 px-2 font-mono-code text-[11px] text-slate-300">${prev}</td>
+            <td class="py-1.5 px-2 text-right">
+              <button type="button" onclick="deleteScannedRecord(${idx})" class="text-rose-400 hover:text-rose-300 font-bold px-1.5 cursor-pointer">✕</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    window.deleteScannedRecord = function(idx) {
+      appState.scannedRecords.splice(idx, 1);
+      saveScansToStorage();
+      renderScannedRecordsTable();
+    };
+
+    function exportStrictBinaryCSV() {
+      if (appState.scannedRecords.length === 0) {
+        showToast('No hay registros escaneados para exportar.', 'error');
+        return;
+      }
+      const n = appState.questions;
+      const headers = ['codigo_estudiante'];
+      for (let i = 1; i <= n; i++) headers.push(`P${i}`);
+
+      const rows = [headers.join(',')];
+      appState.scannedRecords.forEach(rec => {
+        const vec = [];
+        for (let i = 0; i < n; i++) vec.push(rec.results[i] === 1 ? 1 : 0);
+        rows.push(`${rec.codigo},${vec.join(',')}`);
+      });
+
+      const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resultados_omr_binario_${computeTemplateHash()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`CSV binario descargado (${appState.scannedRecords.length} registros).`);
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function showToast(msg, type = 'success') {
+      const banner = document.getElementById('toast-banner');
+      document.getElementById('toast-text').textContent = msg;
+      document.getElementById('toast-dot').className = type === 'error' ? 'w-2 h-2 rounded-full bg-rose-500' : 'w-2 h-2 rounded-full bg-emerald-400';
+      banner.classList.remove('translate-y-24', 'opacity-0');
+      setTimeout(() => banner.classList.add('translate-y-24', 'opacity-0'), 3200);
+    }
+
+    function bindAllEvents() {
+      const tabGen = document.getElementById('tab-btn-generator');
+      const tabScan = document.getElementById('tab-btn-scanner');
+      const modGen = document.getElementById('module-generator');
+      const modScan = document.getElementById('module-scanner');
+
+      tabGen.addEventListener('click', () => {
+        stopMobileCamera();
+        modGen.classList.remove('hidden');
+        modScan.classList.add('hidden');
+        tabGen.className = 'flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-indigo-600 text-white shadow transition cursor-pointer';
+        tabScan.className = 'flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white transition cursor-pointer';
+        adjustPreviewScale();
+      });
+
+      tabScan.addEventListener('click', () => {
+        modGen.classList.add('hidden');
+        modScan.classList.remove('hidden');
+        tabScan.className = 'flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-indigo-600 text-white shadow transition cursor-pointer';
+        tabGen.className = 'flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white transition cursor-pointer';
+        syncAnswerKeyUI();
+        renderScannedRecordsTable();
+      });
+
+      document.getElementById('cfg-questions').addEventListener('change', e => {
+        const val = Math.max(1, Math.min(180, parseInt(e.target.value, 10) || 180));
+        e.target.value = val;
+        appState.questions = val;
+        if (appState.answerKey.length > val) appState.answerKey = appState.answerKey.slice(0, val);
+        renderLivePreview();
+        syncAnswerKeyUI();
+      });
+
+      document.getElementById('cfg-options').addEventListener('change', e => {
+        appState.optionsCount = parseInt(e.target.value, 10);
+        parseAnswerKeyString(appState.answerKey.join(''));
+        renderLivePreview();
+      });
+
+      document.getElementById('cfg-columns').addEventListener('change', e => {
+        appState.columns = parseInt(e.target.value, 10);
+        renderLivePreview();
+      });
+
+      document.getElementById('cfg-institution').addEventListener('input', e => {
+        appState.institution = e.target.value;
+        renderLivePreview();
+      });
+
+      document.getElementById('cfg-title').addEventListener('input', e => {
+        appState.title = e.target.value;
+        renderLivePreview();
+      });
+
+      // Botones de Generación PDF Nativa y Galería
+      document.getElementById('btn-generate-pdf-batch').addEventListener('click', () => generateAndOpenPDF(false));
+      document.getElementById('btn-generate-pdf-single').addEventListener('click', () => generateAndOpenPDF(true));
+      document.getElementById('btn-open-gallery-modal').addEventListener('click', openBatchGalleryModal);
+
+      document.getElementById('btn-close-pdf-modal').addEventListener('click', () => {
+        document.getElementById('pdf-viewer-modal').classList.add('hidden');
+      });
+
+      document.getElementById('btn-close-gallery-modal').addEventListener('click', () => {
+        document.getElementById('gallery-modal').classList.add('hidden');
+      });
+
+      document.getElementById('btn-gallery-to-pdf').addEventListener('click', () => {
+        document.getElementById('gallery-modal').classList.add('hidden');
+        generateAndOpenPDF(false);
+      });
+
+      // Gestión de Estudiantes
+      document.getElementById('form-add-student').addEventListener('submit', e => {
+        e.preventDefault();
+        const rawCode = document.getElementById('stu-code').value.replace(/\D/g, '');
+        if (rawCode.length !== 10) {
+          showToast('El código debe tener exactamente 10 cifras.', 'error');
+          return;
+        }
+        const nombre = document.getElementById('stu-name').value.trim().toUpperCase();
+        const grado = document.getElementById('stu-grade').value.trim();
+
+        const idx = appState.students.findIndex(s => s.codigo === rawCode);
+        if (idx >= 0) { appState.students[idx] = { codigo: rawCode, nombre, grado }; appState.selectedStudentIndex = idx; }
+        else { appState.students.push({ codigo: rawCode, nombre, grado }); appState.selectedStudentIndex = appState.students.length - 1; }
+
+        e.target.reset();
+        saveStudentsToStorage();
+        renderStudentsUI();
+        renderLivePreview();
+        showToast('Estudiante agregado.');
+      });
+
+      document.getElementById('input-csv-students').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => parseBulkStudentsText(ev.target.result);
+        reader.readAsText(file);
+        e.target.value = '';
+      });
+
+      document.getElementById('btn-toggle-paste').addEventListener('click', () => {
+        document.getElementById('paste-area-box').classList.toggle('hidden');
+      });
+
+      document.getElementById('btn-process-paste').addEventListener('click', () => {
+        parseBulkStudentsText(document.getElementById('textarea-bulk-students').value);
+        document.getElementById('textarea-bulk-students').value = '';
+        document.getElementById('paste-area-box').classList.add('hidden');
+      });
+
+      document.getElementById('search-student').addEventListener('input', renderStudentsUI);
+      document.getElementById('preview-student-select').addEventListener('change', e => {
+        appState.selectedStudentIndex = parseInt(e.target.value, 10) || 0;
+        renderStudentsUI();
+        renderLivePreview();
+      });
+
+      document.getElementById('btn-toggle-scale').addEventListener('click', e => {
+        autoScaleEnabled = !autoScaleEnabled;
+        e.target.textContent = autoScaleEnabled ? 'Escala: Auto' : 'Escala: 100%';
+        adjustPreviewScale();
+      });
+
+      // Módulo 2: Clave y Escáner
+      document.getElementById('answer-key-input').addEventListener('input', e => parseAnswerKeyString(e.target.value));
+      document.getElementById('input-key-file').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => { parseAnswerKeyString(ev.target.result); showToast('Clave cargada.'); };
+        reader.readAsText(file);
+        e.target.value = '';
+      });
+      document.getElementById('btn-random-key').addEventListener('click', () => generateRandomAnswerKey(true));
+      document.getElementById('btn-toggle-key-editor').addEventListener('click', () => {
+        document.getElementById('visual-key-editor').classList.toggle('hidden');
+        renderVisualKeyEditor();
+      });
+
+      document.getElementById('btn-start-camera').addEventListener('click', startMobileCamera);
+      document.getElementById('btn-stop-camera').addEventListener('click', stopMobileCamera);
+      document.getElementById('btn-capture-frame').addEventListener('click', () => {
+        const video = document.getElementById('camera-video');
+        if (video && video.readyState >= 2) { processImageSource(video, false, null); stopMobileCamera(); }
+      });
+
+      document.getElementById('input-scan-photo').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const img = new Image();
+        img.onload = () => { processImageSource(img, false, null); URL.revokeObjectURL(img.src); };
+        img.src = URL.createObjectURL(file);
+        e.target.value = '';
+      });
+
+      document.getElementById('btn-simulate-scan').addEventListener('click', runSimulatedScan);
+
+      document.getElementById('input-threshold').addEventListener('input', e => {
+        const val = parseInt(e.target.value, 10);
+        appState.thresholdRatio = val / 100;
+        document.getElementById('threshold-label').textContent = `${val}% contraste`;
+        if (appState.currentImage) {
+          processImageSource(appState.currentImage, true, appState.lastEvaluation ? { id: appState.lastEvaluation.codigo } : null);
+        }
+      });
+
+      document.getElementById('btn-reprocess-corners').addEventListener('click', () => {
+        if (appState.currentImage) {
+          processImageSource(appState.currentImage, true, appState.lastEvaluation ? { id: appState.lastEvaluation.codigo } : null);
+          showToast('Grilla recalculada.');
+        }
+      });
+
+      document.getElementById('btn-save-current-scan').addEventListener('click', saveCurrentEvaluationRecord);
+      document.getElementById('btn-export-csv').addEventListener('click', exportStrictBinaryCSV);
+      document.getElementById('btn-clear-scans').addEventListener('click', () => {
+        appState.scannedRecords = [];
+        saveScansToStorage();
+        renderScannedRecordsTable();
+        showToast('Historial limpiado.');
+      });
+
+      bindCanvasCornerDragging();
+      window.addEventListener('resize', adjustPreviewScale);
+    }
+
+    // =====================================================================
+    // AUTENTICACIÓN SUPABASE (solo cliente público; RLS protege los datos)
+    // =====================================================================
+    const SUPABASE_URL = 'https://vjtyydprcdxpiebweoil.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_mDAxnWOtSXJHYY8vBOuo1w_t1y8u3jM';
+    let supabaseClient = null;
+
+    function setAuthMessage(message, isError = false) {
+      const box = document.getElementById('auth-message');
+      if (!box) return;
+      box.textContent = message;
+      box.classList.remove('hidden', 'border-red-700', 'text-red-300', 'border-emerald-700', 'text-emerald-300');
+      box.classList.add(isError ? 'border-red-700' : 'border-emerald-700', isError ? 'text-red-300' : 'text-emerald-300');
+    }
+
+    function updateAuthUI(user) {
+      const label = document.getElementById('auth-user-label');
+      const openBtn = document.getElementById('btn-auth-open');
+      const outBtn = document.getElementById('btn-auth-signout');
+      if (user) {
+        label.textContent = user.email || 'Sesión iniciada';
+        openBtn.textContent = 'Mi cuenta';
+        outBtn.classList.remove('hidden');
+      } else {
+        label.textContent = 'Sin sesión';
+        openBtn.textContent = 'Conectar cuenta';
+        outBtn.classList.add('hidden');
+      }
+    }
+
+    async function loadStudentGroups() {
+      const select = document.getElementById('student-group-select');
+      if (!select || !supabaseClient) return;
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user) { select.innerHTML = '<option value="">Inicia sesión para cargar carpetas</option>'; return; }
+      const { data, error } = await supabaseClient
+        .from('student_groups').select('id,name').order('name');
+      if (error) throw error;
+      select.innerHTML = '<option value="">Selecciona una carpeta…</option>' +
+        (data || []).map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+
+    async function createStudentGroup() {
+      if (!supabaseClient) return showToast('Supabase no está disponible.', 'error');
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user) return showToast('Inicia sesión antes de crear carpetas.', 'error');
+      const name = prompt('Nombre de la carpeta (ej. 11° - 2026):');
+      if (name === null) return;
+      if (!name.trim()) return showToast('El nombre de la carpeta no puede estar vacío.', 'error');
+      const { data, error } = await supabaseClient.from('student_groups')
+        .insert({ owner_id: user.id, name: name.trim() }).select('id,name').single();
+      if (error) return showToast('No se pudo crear la carpeta: ' + error.message, 'error');
+      await loadStudentGroups();
+      document.getElementById('student-group-select').value = data.id;
+      showToast(`Carpeta «${data.name}» creada.`);
+    }
+
+    async function syncImportedStudentsToSupabase(students, groupId) {
+      if (!supabaseClient) throw new Error('Supabase no está conectado.');
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user) throw new Error('Debes iniciar sesión.');
+      const rows = students.map(st => ({ owner_id: user.id, code: st.codigo, name: st.nombre, grade: st.grado }));
+      const { data: saved, error } = await supabaseClient.from('students')
+        .upsert(rows, { onConflict: 'owner_id,code' }).select('id,code');
+      if (error) throw error;
+      const memberships = (saved || []).map(st => ({ owner_id: user.id, group_id: groupId, student_id: st.id }));
+      if (memberships.length) {
+        const { error: membershipError } = await supabaseClient
+          .from('student_group_memberships').upsert(memberships, { onConflict: 'group_id,student_id' });
+        if (membershipError) throw membershipError;
+      }
+      showToast(`${memberships.length} estudiante(s) sincronizado(s) en Supabase.`);
+    }
+
+    async function initSupabaseAuth() {
+      if (!window.supabase || !window.supabase.createClient) {
+        setAuthMessage('No se pudo cargar el cliente de Supabase. Comprueba tu conexión a Internet.', true);
+        return;
+      }
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+      const { data, error } = await supabaseClient.auth.getSession();
+      if (error) console.warn('Supabase getSession:', error.message);
+      updateAuthUI(data?.session?.user || null);
+      if (data?.session?.user) loadStudentGroups().catch(err => showToast('Error cargando carpetas: ' + err.message, 'error'));
+      supabaseClient.auth.onAuthStateChange((_event, session) => {
+        updateAuthUI(session?.user || null);
+        if (session?.user) loadStudentGroups().catch(err => console.error('Carpetas:', err));
+        else document.getElementById('student-group-select').innerHTML = '<option value="">Inicia sesión para cargar carpetas</option>';
+      });
+    }
+
+    async function authLogin() {
+      if (!supabaseClient) return setAuthMessage('Supabase todavía no está disponible.', true);
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+      if (!email || !password) return setAuthMessage('Escribe tu correo y contraseña.', true);
+      const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) return setAuthMessage(error.message, true);
+      setAuthMessage('Sesión iniciada correctamente.');
+      showToast('Cuenta conectada.');
+      setTimeout(() => document.getElementById('auth-modal').classList.add('hidden'), 700);
+    }
+
+    async function authRegister() {
+      if (!supabaseClient) return setAuthMessage('Supabase todavía no está disponible.', true);
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+      if (!email || !password) return setAuthMessage('Escribe tu correo y contraseña.', true);
+      if (password.length < 8) return setAuthMessage('La contraseña debe tener al menos 8 caracteres.', true);
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) return setAuthMessage(error.message, true);
+      if (data.session) {
+        setAuthMessage('Cuenta creada y sesión iniciada.');
+        showToast('Cuenta creada.');
+        setTimeout(() => document.getElementById('auth-modal').classList.add('hidden'), 900);
+      } else {
+        setAuthMessage('Cuenta creada. Revisa tu correo para confirmar la dirección antes de iniciar sesión.');
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('btn-auth-open').addEventListener('click', () => {
+        document.getElementById('auth-modal').classList.remove('hidden');
+        document.getElementById('auth-message').classList.add('hidden');
+      });
+      document.getElementById('btn-auth-close').addEventListener('click', () => document.getElementById('auth-modal').classList.add('hidden'));
+      document.getElementById('btn-auth-login').addEventListener('click', authLogin);
+      document.getElementById('btn-create-student-group').addEventListener('click', createStudentGroup);
+      document.getElementById('btn-auth-register').addEventListener('click', authRegister);
+      document.getElementById('btn-auth-signout').addEventListener('click', async () => {
+        if (!supabaseClient) return;
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) showToast('No se pudo cerrar sesión: ' + error.message, 'error');
+        else showToast('Sesión cerrada.');
+      });
+      document.getElementById('auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') authLogin(); });
+      initSupabaseAuth();
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initState();
+      bindAllEvents();
+      renderStudentsUI();
+      renderLivePreview();
+      syncAnswerKeyUI();
+      renderScannedRecordsTable();
+    });
+  </script>
+</body>
+</html>
