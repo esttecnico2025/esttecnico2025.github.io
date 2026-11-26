@@ -17,8 +17,23 @@ const safeName = (value: string) => value.normalize("NFD").replace(/[\u0300-\u03
 const sameMap = (a: any[], b: any[]) => JSON.stringify(a.map(q => [Number(q.session),Number(q.position),String(q.item_code),String(q.area),Number(q.area_order),Number(q.question_in_area),Boolean(q.annulled)])) === JSON.stringify(b.map(q => [Number(q.session),Number(q.position),String(q.item_code),String(q.area),Number(q.area_order),Number(q.question_in_area),Boolean(q.annulled)]));
 
 const url = Deno.env.get("SUPABASE_URL")!;
-const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+const secretKeys = JSON.parse(
+  Deno.env.get("SUPABASE_SECRET_KEYS")!
+);
+
+const serviceKey = secretKeys["default"];
+
+if (!serviceKey) {
+  throw new Error("No se encontró la clave secreta predeterminada de Supabase.");
+}
+
+const admin = createClient(url, serviceKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+});
 
 async function buildInput(ownerId: string, examId: string) {
   const { data: exam, error: examError } = await admin.from("exams")
