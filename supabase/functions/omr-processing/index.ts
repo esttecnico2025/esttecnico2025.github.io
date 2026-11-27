@@ -166,10 +166,76 @@ Deno.serve(async (req) => {
     input_payload: claimed.input_payload
   });
 }
-    if(action==="worker-complete"){
-      const result=body.result_payload;if(!result||!Array.isArray(result.results)||!Array.isArray(result.detail)||!Array.isArray(result.audit))return json({error:"Resultado incompleto."},400);
-      const {error}=await admin.from("omr_processing_jobs").update({status:"completed",result_payload:result,error_message:null,completed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",jobId);
-      if(error)throw error;return json({ok:true});
+    
+    if (action === "worker-complete") {
+      const result = body.result_payload;
+
+      if (
+        !result ||
+        !Array.isArray(result.results) ||
+        !Array.isArray(result.detail) ||
+        !Array.isArray(result.audit)
+      ) {
+        return json({ error: "Resultado incompleto." }, 400);
+      }
+
+      const { data: completed, error } = await admin
+        .from("omr_processing_jobs")
+        .update({
+          status: "completed",
+          result_payload: result,
+          error_message: null,
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", jobId)
+        .eq("status", "running")
+        .select("id")
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!completed) {
+        return json({
+          error: "No se puede completar el trabajo porque ya no está en estado running."
+        }, 409);
+      }
+
+      return json({ ok: true });
+    }
+
+    const expectedStatus = String(body.expected_status || "");
+
+    if (!["queued", "running"].includes(expectedStatus)) {
+      return json({ error: "Estado esperado inválido para notificar el fallo." }, 400);
+    }
+
+    const message = String(
+      body.error_message || "Falló el workflow de GitHub Actions."
+    ).slice(0, 4000);
+
+    const { data: failed, error } = await admin
+      .from("omr_processing_jobs")
+      .update({
+        status: "failed",
+        error_message: message,
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", jobId)
+      .eq("status", expectedStatus)
+      .select("id")
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!failed) {
+      return json({
+        error: "No se modificó el trabajo: su estado cambió o ya fue finalizado."
+      }, 409);
+    }
+
+    return json({ ok: true });
     }
     const message=String(body.error_message||"Falló el workflow de GitHub Actions.").slice(0,4000);
     const {error}=await admin.from("omr_processing_jobs").update({status:"failed",error_message:message,completed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",jobId);
@@ -262,11 +328,24 @@ Deno.serve(async (req) => {
     });
     if(!dispatch.ok){const detail=await dispatch.text();throw new Error(`GitHub rechazó el trabajo (${dispatch.status}): ${detail.slice(0,900)}`);}
     return json({job_id:job.id,status:"queued",model:built.model,sessions:built.sessions,total_students:built.totalStudents});
-  }catch(err){
-    console.error("omr-processing start:",err);
-    if(createdJobId){
-      await admin.from("omr_processing_jobs").update({status:"failed",error_message:String(err?.message||err).slice(0,4000),completed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",createdJobId);
+    } catch (err) {
+    console.error("omr-processing start:", err);
+
+    if (createdJobId) {
+      await admin
+        .from("omr_processing_jobs")
+        .update({
+          status: "failed",
+          error_message: String(err?.message || err).slice(0, 4000),
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", createdJobId)
+        .eq("status", "queued");
     }
-    return json({error:err?.message||"No se pudo iniciar el procesamiento."},400);
+
+    return json({
+      error: err?.message || "No se pudo iniciar el procesamiento."
+    }, 400);
   }
 });
