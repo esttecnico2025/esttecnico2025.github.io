@@ -97,6 +97,7 @@ jobs:
           JOB_ID: ${{ inputs.job_id }}
         shell: bash
         run: |
+          mkdir -p work
           if [ -n "$EDGE_FUNCTION_URL" ] && [ -n "$OMR_WORKER_SECRET" ]; then
             python - <<'PY'
           import json,os
