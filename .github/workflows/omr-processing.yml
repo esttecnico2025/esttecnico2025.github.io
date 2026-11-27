@@ -102,21 +102,11 @@ jobs:
         run: |
           mkdir -p work
 
-          # Si se intentó reclamar el trabajo pero no se consiguió,
-          # otra ejecución pudo haberlo reclamado primero.
-          # No debemos modificar su estado.
-          if [ -f work/worker_get_attempted ] && [ ! -f work/worker_claimed ]; then
-            echo "No se notifica el fallo: el trabajo no fue reclamado por esta ejecución."
+          # Una ejecución que no reclamó el trabajo no puede cambiar su estado.
+          if [ ! -f work/worker_claimed ]; then
+            echo "El trabajo no fue reclamado por esta ejecución. Se conserva su estado para permitir un reintento."
             exit 0
           fi
-
-          if [ -f work/worker_claimed ]; then
-            EXPECTED_STATUS="running"
-          else
-            EXPECTED_STATUS="queued"
-          fi
-
-          export EXPECTED_STATUS
 
           if [ -n "$EDGE_FUNCTION_URL" ] && [ -n "$OMR_WORKER_SECRET" ]; then
             python - <<'PY'
@@ -126,8 +116,8 @@ jobs:
           payload = {
               "action": "worker-fail",
               "job_id": os.environ["JOB_ID"],
-              "expected_status": os.environ["EXPECTED_STATUS"],
-              "error_message": "El workflow de GitHub Actions falló. Abre la ejecución correspondiente para consultar el paso y el registro técnico."
+              "expected_status": "running",
+              "error_message": "El workflow de GitHub Actions falló después de reclamar el trabajo. Consulta la ejecución de GitHub Actions para ver el error técnico."
           }
 
           Path("work/fail.json").write_text(
