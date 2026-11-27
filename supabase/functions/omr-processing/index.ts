@@ -250,16 +250,71 @@ Deno.serve(async (req) => {
   let createdJobId:string|null=null;
   try{
     const {data:activeJob,error:activeError}=await admin.from("omr_processing_jobs").select("id,status").eq("owner_id",userData.user.id).eq("exam_id",examId).in("status",["queued","running"]).order("created_at",{ascending:false}).limit(1).maybeSingle();
-    if(activeError)throw activeError;
+    
+    if (activeError) throw activeError;
+
     if (activeJob) {
-  // Si el worker ya comenzó, no duplicamos el procesamiento.
-  if (activeJob.status === "running") {
-    return json({
-      job_id: activeJob.id,
-      status: "running",
-      already_running: true
-    });
-  }
+      if (activeJob.status === "running") {
+        return json({
+          job_id: activeJob.id,
+          status: "running",
+          already_running: true
+        });
+      }
+
+      // El trabajo sigue en cola: volver a enviarlo a GitHub.
+      const owner = Deno.env.get("GITHUB_OWNER") || "esttecnico2025";
+      const repo = Deno.env.get("GITHUB_REPO") || "esttecnico2025.github.io";
+      const ref = Deno.env.get("GITHUB_REF") || "main";
+      const workflow = Deno.env.get("GITHUB_WORKFLOW_FILE") || "omr-processing.yml";
+      const githubToken = Deno.env.get("GITHUB_TOKEN");
+
+      if (!githubToken) {
+        throw new Error("Falta configurar GITHUB_TOKEN en Supabase.");
+      }
+
+      const dispatch = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,
+        {
+          method: "POST",
+          headers: {
+            "Accept": "application/vnd.github+json",
+            "Authorization": `Bearer ${githubToken}`,
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            ref,
+            inputs: {
+              job_id: activeJob.id
+            }
+          })
+        }
+      );
+
+      if (!dispatch.ok) {
+        const detail = await dispatch.text();
+
+        await admin
+          .from("omr_processing_jobs")
+          .update({
+            error_message: `GitHub rechazó el reenvío (${dispatch.status}): ${detail}`.slice(0, 4000),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", activeJob.id)
+          .eq("status", "queued");
+
+        throw new Error(`GitHub rechazó el reenvío (${dispatch.status}): ${detail}`);
+      }
+
+      return json({
+        job_id: activeJob.id,
+        status: "queued",
+        redispatched: true
+      });
+    }
+
+    const built = await buildInput(userData.user.id, examId);
 
   // Si sigue en cola, reenviamos el mismo trabajo a GitHub.
   const owner = Deno.env.get("GITHUB_OWNER") || "esttecnico2025";
